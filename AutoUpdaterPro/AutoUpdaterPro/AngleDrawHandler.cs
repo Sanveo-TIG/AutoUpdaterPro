@@ -72,6 +72,9 @@ namespace AutoUpdaterPro
             {
                 return;
             }
+            finally
+            {
+            }
         }
 
         public void AutoUpdater(UIApplication _uiapp, List<Element> SelectedElements)
