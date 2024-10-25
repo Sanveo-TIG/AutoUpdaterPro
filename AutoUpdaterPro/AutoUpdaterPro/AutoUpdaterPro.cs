@@ -81,6 +81,7 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
         public static PushButton AutoConnectButton { get; set; }
         public static PushButton ToggleConPakToolsButton { get; set; }
         public static PushButton ToggleConPakToolsButtonSample { get; set; }
+        public static bool isStatic {  get; set; }
         /// <summary>
         /// Property to get and set private member variables of info form.
         /// </summary>
@@ -323,7 +324,7 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                             }
                                             List<ElementId> FittingElements = new List<ElementId>();
                                             FittingElements = FittingElem.Distinct().ToList();
-                                            if (FittingElements.Count == (2 * (elementlist.Count)))
+                                            if (FittingElements.Count == (2 * (elementlist.Count)) && !isStatic)
                                             {
                                                 window = new MainWindow();
                                                 MainWindow.Instance.firstElement = new List<Element>();
@@ -333,10 +334,11 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                 MainWindow.Instance._uiApplication = uiApp;
                                                 window.Show();
                                             }
-                                            else
-                                            {
-                                                uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
-                                            }
+                                            /*else if(FittingElements.Count != (2 * (elementlist.Count)) && !isStatic)
+                                             {
+                                                 uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
+                                                 System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                             }*/
                                         }
                                         else
                                         {

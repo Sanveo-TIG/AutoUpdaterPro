@@ -72,11 +72,7 @@ namespace AutoUpdaterPro
             {
                 return;
             }
-            finally
-            {
-            }
         }
-
         public void AutoUpdater(UIApplication _uiapp, List<Element> SelectedElements)
         {
             UIDocument uidoc = _uiapp.ActiveUIDocument;
@@ -686,7 +682,6 @@ namespace AutoUpdaterPro
             {
             }
         }
-
         #region connectors
         public void HoffsetExecute(UIApplication uiapp, ref List<Element> PrimaryElements, ref List<Element> SecondaryElements)
         {

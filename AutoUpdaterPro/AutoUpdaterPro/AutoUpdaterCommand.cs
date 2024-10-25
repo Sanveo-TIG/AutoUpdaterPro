@@ -32,7 +32,7 @@ namespace AutoUpdaterPro
                     window.Show();
                     window.Closed += OnClosing;
 
-                    MainWindow.Instance.isStaticTool = true;
+                    ExternalApplication.isStatic = true;
 
                     if (ExternalApplication.ToggleConPakToolsButtonSample != null)
                         ExternalApplication.ToggleConPakToolsButtonSample.Enabled = false;
@@ -49,6 +49,7 @@ namespace AutoUpdaterPro
         {
             try
             {
+                ExternalApplication.isStatic = false;
                 if (ExternalApplication.ToggleConPakToolsButtonSample != null)
                     ExternalApplication.ToggleConPakToolsButtonSample.Enabled = true;
             }

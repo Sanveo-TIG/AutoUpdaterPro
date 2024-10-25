@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using TIGUtility;
 
 namespace AutoUpdaterPro
@@ -77,7 +78,7 @@ namespace AutoUpdaterPro
         public static MainWindow Instance;
         public UIApplication _UIApp = null;
         public List<ExternalEvent> _externalEvents = new List<ExternalEvent>();
-        
+
         //public double angleDegree;
 
         public double? angleDegree { get; set; }
@@ -168,17 +169,20 @@ namespace AutoUpdaterPro
         {
             try
             {
-                if (isStaticTool)
+                string s = ExternalApplication.ToggleConPakToolsButton.ItemText;
+                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-32X32.png"));
+                BitmapImage OnLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-32X32.png"));
+
+                BitmapImage OnImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-16X16.png"));
+                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-16X16.png"));
+                if (s == "AutoUpdate ON")
                 {
-                    if (ExternalApplication.ToggleConPakToolsButtonSample != null)
-                        ExternalApplication.ToggleConPakToolsButtonSample.Enabled = true;
-                    Instance.Close();
+                    ExternalApplication.ToggleConPakToolsButton.LargeImage = OffLargeImage;
+                    ExternalApplication.ToggleConPakToolsButton.Image = OffImage;
+                    ExternalApplication.ToggleConPakToolsButton.ItemText = "AutoUpdate OFF";
                 }
-                else
-                {
-                    ExternalApplication.Toggle();
-                    _externalEvents[1].Raise();
-                }
+                ExternalApplication.ToggleConPakToolsButtonSample.Enabled = true;
+                _externalEvents[1].Raise();
             }
             catch (Exception)
             {
