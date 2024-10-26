@@ -336,8 +336,33 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                             }
                                             else if (FittingElements.Count != (2 * (elementlist.Count)) && !isStatic)
                                             {
-                                                uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
-                                                System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel = null;
+                                                string tabName = "Sanveo Tools";
+                                                string panelName = "Auto Connect";
+
+                                                string executableLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                                                string dllLocation = Path.Combine(executableLocation, "AutoConnectPro.dll");
+
+                                                List<Autodesk.Revit.UI.RibbonPanel> panels = uiApp.GetRibbonPanels(tabName);
+                                                Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel01 = panels.FirstOrDefault(p => p.Name == panelName);
+                                                bool ErrorOccured = false;
+                                                if (autoUpdaterPanel01 != null)
+                                                {
+                                                    IList<RibbonItem> items = autoUpdaterPanel01.GetItems();
+
+                                                    foreach (RibbonItem item in items)
+                                                    {
+                                                        if (item is PushButton pushButton && pushButton.ItemText == "AutoConnect ON")
+                                                        {
+                                                            ErrorOccured = true;
+                                                        }
+                                                    }
+                                                }
+                                                if (!ErrorOccured)
+                                                {
+                                                    uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
+                                                    System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                }                                                
                                             }
                                         }
                                         else
