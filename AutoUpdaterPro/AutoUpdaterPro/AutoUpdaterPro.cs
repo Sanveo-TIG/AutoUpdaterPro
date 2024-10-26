@@ -334,11 +334,11 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                 MainWindow.Instance._uiApplication = uiApp;
                                                 window.Show();
                                             }
-                                            /*else if(FittingElements.Count != (2 * (elementlist.Count)) && !isStatic)
-                                             {
-                                                 uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
-                                                 System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                             }*/
+                                            else if (FittingElements.Count != (2 * (elementlist.Count)) && !isStatic)
+                                            {
+                                                uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
+                                                System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                            }
                                         }
                                         else
                                         {
