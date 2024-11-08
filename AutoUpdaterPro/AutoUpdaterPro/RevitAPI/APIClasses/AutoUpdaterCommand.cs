@@ -2,12 +2,12 @@
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
 using Revit.SDK.Samples.AutoUpdaterPro.CS;
-using Revit.SDK.Samples.AutoUpdaterPro.CS;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Windows;
 using TIGUtility;
 
 namespace AutoUpdaterPro
@@ -15,26 +15,29 @@ namespace AutoUpdaterPro
     [Transaction(TransactionMode.Manual)]
     public class AutoUpdaterCommand : IExternalCommand
     {
-        public Result Execute(ExternalCommandData commandData, ref string message,ElementSet elements)
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
             try
             {
-                if (Utility.HasValidLicense("Public"))
+                if (ExternalApplication.ToggleConPakToolsButtonSample != null && ExternalApplication.ToggleConPakToolsButtonSample.Enabled)
                 {
-                    if (Utility.ReadPremiumLicense("Auto Updater"))
+                    if (Utility.HasValidLicense("Public"))
                     {
-                        CustomUIApplication customUIApplication = new CustomUIApplication
+                        if (Utility.ReadPremiumLicense("AutoUpdate"))
                         {
-                            CommandData = commandData
-                        };
-                        System.Windows.Window window = new MainWindow();
-                        window.Show();
-                        window.Closed += OnClosing;
+                            CustomUIApplication customUIApplication = new CustomUIApplication
+                            {
+                                CommandData = commandData
+                            };
+                            System.Windows.Window window = new MainWindow();
+                            window.Show();
+                            window.Closed += OnClosing;
 
-                        ExternalApplication.isStatic = true;
+                            ExternalApplication.isStatic = true;
 
-                        if (ExternalApplication.ToggleConPakToolsButtonSample != null)
-                            ExternalApplication.ToggleConPakToolsButtonSample.Enabled = false;
+                            if (ExternalApplication.ToggleConPakToolsButtonSample != null)
+                                ExternalApplication.ToggleConPakToolsButtonSample.Enabled = false;
+                        }
                     }
                 }
                 return Result.Succeeded;
@@ -45,6 +48,7 @@ namespace AutoUpdaterPro
                 return Result.Failed;
             }
         }
+
         public void OnClosing(object senTagProToolr, EventArgs e)
         {
             try
