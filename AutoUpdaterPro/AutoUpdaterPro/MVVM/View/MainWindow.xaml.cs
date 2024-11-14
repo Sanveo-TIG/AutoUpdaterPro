@@ -98,6 +98,9 @@ namespace AutoUpdaterPro
         public event PropertyChangedEventHandler PropertyChanged;
 
         public List<Element> _bendElements = new List<Element>();
+        private bool isDrag = false;
+        private System.Windows.Point mouseOffset;
+        private System.Windows.Point popupInitialOffset;
 
         protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
@@ -152,19 +155,12 @@ namespace AutoUpdaterPro
             System.Drawing.Point point = System.Windows.Forms.Control.MousePosition;
             return new System.Windows.Point(point.X, point.Y);
         }
-
-        private void popupBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-        {
-            //_externalEvents[0].Raise();
-        }
-
         private void angleBtn_Click(object sender, RoutedEventArgs e)
         {
             angleDegree = Convert.ToDouble(((System.Windows.Controls.ContentControl)sender).Content);
             _externalEvents[0].Raise();
             isoffset = true;
         }
-
         private void popupClose_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             try
@@ -187,6 +183,28 @@ namespace AutoUpdaterPro
             catch (Exception)
             {
             }
+        }
+        private void popupBox_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if (isDrag)
+            {
+                System.Windows.Point currentMousePos = e.GetPosition(null);
+                this.Left = currentMousePos.X - mouseOffset.X + popupInitialOffset.X;
+                this.Top = currentMousePos.Y - mouseOffset.Y + popupInitialOffset.Y;
+                Mouse.UpdateCursor();
+            }
+        }
+        private void popupBox_PreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            isDrag = true;
+            mouseOffset = e.GetPosition(this);
+            popupInitialOffset = new System.Windows.Point(this.Left, this.Top);
+            Mouse.Capture(sender as IInputElement);
+        }
+        private void popupBox_PreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            isDrag = false;
+            Mouse.Capture(null);
         }
     }
 }

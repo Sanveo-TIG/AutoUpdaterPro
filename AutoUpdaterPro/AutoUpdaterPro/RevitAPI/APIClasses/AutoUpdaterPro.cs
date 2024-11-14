@@ -261,7 +261,7 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
             {
                 if (ToggleConPakToolsButton.Enabled || ToggleConPakToolsButtonSample.Enabled)
                 {
-                    if (ToggleConPakToolsButton.ItemText == "AutoUpdate ON" && !ToggleConPakToolsButtonSample.Enabled)
+                    if (ToggleConPakToolsButton.ItemText == "AutoUpdate ON" || !ToggleConPakToolsButtonSample.Enabled)
                     {
                         List<Element> SelectedElements = new List<Element>();
                         UIApplication uiApp = sender as UIApplication;
@@ -341,12 +341,14 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                     Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel = null;
                                                     string tabName = "Sanveo Tools";
                                                     string panelName = "Auto Connect";
+                                                    string panelNameAU = "AutoUpdate";
 
                                                     string executableLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
                                                     string dllLocation = Path.Combine(executableLocation, "AutoConnectPro.dll");
 
                                                     List<Autodesk.Revit.UI.RibbonPanel> panels = uiApp.GetRibbonPanels(tabName);
                                                     Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel01 = panels.FirstOrDefault(p => p.Name == panelName);
+                                                    Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel02 = panels.FirstOrDefault(p => p.Name == panelNameAU);
                                                     bool ErrorOccured = false;
                                                     if (autoUpdaterPanel01 != null)
                                                     {
@@ -358,12 +360,23 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                             {
                                                                 ErrorOccured = true;
                                                             }
+                                                            else if (item.ItemText == "AutoConnect" && !item.Enabled && autoUpdaterPanel02.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoUpdate ON")
+                                                        && autoUpdaterPanel01.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoConnect OFF"))
+                                                            {
+                                                                ErrorOccured = true;
+                                                                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-32X32.png"));
+                                                                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-16X16.png"));
+                                                                ToggleConPakToolsButton.ItemText = "AutoUpdate OFF";
+                                                                ToggleConPakToolsButton.LargeImage = OffLargeImage;
+                                                                ToggleConPakToolsButton.Image = OffImage;
+                                                                ToggleConPakToolsButtonSample.Enabled = true;
+                                                            }
                                                         }
                                                     }
                                                     if (!ErrorOccured)
                                                     {
                                                         uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
-                                                        System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                        System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AUTOUPDATE", MessageBoxButton.OK, MessageBoxImage.Warning);
                                                     }
                                                 }
                                             }

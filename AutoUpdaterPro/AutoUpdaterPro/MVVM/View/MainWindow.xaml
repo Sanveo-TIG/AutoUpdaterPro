@@ -48,8 +48,9 @@
     <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
         <materialDesign:PopupBox  PlacementMode="BottomAndAlignCentres"
                                Width="35" Name="popupBox" IsPopupOpen="{Binding IsPopupOpened, UpdateSourceTrigger=PropertyChanged,Mode=TwoWay}"
-                               Height="35" PreviewMouseLeftButtonDown="popupBox_PreviewMouseLeftButtonDown" 
+                               Height="35" PreviewMouseMove="popupBox_PreviewMouseMove" 
                                Style="{StaticResource MaterialDesignMultiFloatingActionAccentPopupBox}"
+                               PreviewMouseRightButtonDown="popupBox_PreviewMouseRightButtonDown" PreviewMouseRightButtonUp="popupBox_PreviewMouseRightButtonUp"
                                ToggleCheckedContentCommand="{Binding FloatingActionDemoCommand}"
                                ToggleCheckedContentCommandParameter="wowsers">
             <materialDesign:PopupBox.ToggleContent>
