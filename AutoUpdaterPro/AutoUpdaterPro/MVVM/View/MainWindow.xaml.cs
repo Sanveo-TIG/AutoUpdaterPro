@@ -166,11 +166,11 @@ namespace AutoUpdaterPro
             try
             {
                 string s = ExternalApplication.ToggleConPakToolsButton.ItemText;
-                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-32X32.png"));
-                BitmapImage OnLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-32X32.png"));
+                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
+                BitmapImage OnLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-green.png"));
 
-                BitmapImage OnImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-16X16.png"));
-                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-16X16.png"));
+                BitmapImage OnImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-green.png"));
+                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
                 if (s == "AutoUpdate ON")
                 {
                     ExternalApplication.ToggleConPakToolsButton.LargeImage = OffLargeImage;

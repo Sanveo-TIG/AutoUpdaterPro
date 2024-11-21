@@ -152,11 +152,11 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
             try
             {
                 string s = ToggleConPakToolsButton.ItemText;
-                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-32X32.png"));
-                BitmapImage OnLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-32X32.png"));
+                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
+                BitmapImage OnLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-green.png"));
 
-                BitmapImage OnImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-16X16.png"));
-                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-16X16.png"));
+                BitmapImage OnImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-green.png"));
+                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
                 if (s == "AutoUpdate OFF")
                 {
                     ProjectParameterHandler projectParameterHandler = new ProjectParameterHandler();
@@ -186,17 +186,17 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
             string executableLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             string dllLocation = Path.Combine(executableLocation, "AutoUpdaterPro.dll");
             PushButtonData buttondata = new PushButtonData("ModifierBtn", "AutoUpdate OFF", dllLocation, "Revit.SDK.Samples.AutoUpdaterPro.CS.Command");
-            BitmapImage pb1Image = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-32X32.png"));
+            BitmapImage pb1Image = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
             buttondata.LargeImage = pb1Image;
-            BitmapImage pb1Image2 = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-16X16.png"));
+            BitmapImage pb1Image2 = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
             buttondata.Image = pb1Image2;
             buttondata.AvailabilityClassName = "Revit.SDK.Samples.AutoUpdaterPro.CS.Availability";
 
             #region Sample PushButton 
             PushButtonData buttondataSample1 = new PushButtonData("ModifierBtnCommandAutoConnect", "AutoUpdate", dllLocation, "AutoUpdaterPro.AutoUpdaterCommand");
-            BitmapImage pb1ImageSample11 = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-32X32.png"));
+            BitmapImage pb1ImageSample11 = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-green.png"));
             buttondataSample1.LargeImage = pb1ImageSample11;
-            BitmapImage pb1ImageSample12 = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/on-green-16X16.png"));
+            BitmapImage pb1ImageSample12 = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-green.png"));
             buttondataSample1.Image = pb1ImageSample12;
             #endregion
 
@@ -364,8 +364,8 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                         && autoUpdaterPanel01.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoConnect OFF"))
                                                             {
                                                                 ErrorOccured = true;
-                                                                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-32X32.png"));
-                                                                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/off-red-16X16.png"));
+                                                                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
+                                                                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
                                                                 ToggleConPakToolsButton.ItemText = "AutoUpdate OFF";
                                                                 ToggleConPakToolsButton.LargeImage = OffLargeImage;
                                                                 ToggleConPakToolsButton.Image = OffImage;
