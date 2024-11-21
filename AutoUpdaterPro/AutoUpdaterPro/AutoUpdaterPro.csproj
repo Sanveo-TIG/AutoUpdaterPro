@@ -152,6 +152,10 @@
     <Content Include="AutoUpdaterPro.addin">
       <SubType>Designer</SubType>
     </Content>
+    <Resource Include="Resources\Auto-update-16X16-green.png" />
+    <Resource Include="Resources\Auto-update-16X16-red.png" />
+    <Resource Include="Resources\Auto-update-32X32-green.png" />
+    <Resource Include="Resources\Auto-update-32X32-red.png" />
     <Resource Include="Resources\off-red-16X16.png" />
     <Resource Include="Resources\off-red-32X32.png" />
     <Resource Include="Resources\on-green-16X16.png" />
