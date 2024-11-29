@@ -340,7 +340,7 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                 {
                                                     Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel = null;
                                                     string tabName = "Sanveo Tools";
-                                                    string panelName = "Auto Connect";
+                                                    string panelName = "AutoConnect";
                                                     string panelNameAU = "AutoUpdate";
 
                                                     string executableLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
