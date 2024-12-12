@@ -34,6 +34,7 @@ using System.Windows;
 using System.Windows.Media.Imaging;
 using Autodesk.Revit.UI.Selection;
 using AutoUpdaterPro;
+using Autodesk.Windows;
 
 namespace Revit.SDK.Samples.AutoUpdaterPro.CS
 {
@@ -259,273 +260,347 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
         {
             try
             {
-                if (ToggleConPakToolsButton.Enabled || ToggleConPakToolsButtonSample.Enabled)
+                bool isDisabled = false;
+                Autodesk.Windows.RibbonControl ribbon = Autodesk.Windows.ComponentManager.Ribbon;
+                foreach (Autodesk.Windows.RibbonTab tab in ribbon.Tabs)
                 {
-                    if (ToggleConPakToolsButton.ItemText == "AutoUpdate ON" || !ToggleConPakToolsButtonSample.Enabled)
+                    if (tab.Title.Equals("Sanveo Tools"))
                     {
-                        List<Element> SelectedElements = new List<Element>();
-                        UIApplication uiApp = sender as UIApplication;
-                        UIDocument uiDoc = uiApp.ActiveUIDocument;
-                        Document doc = uiDoc.Document;
-                        if (doc != null && !doc.IsReadOnly)
+                        foreach (Autodesk.Windows.RibbonPanel panel in tab.Panels)
                         {
-                            //Select conduit
-                            Selection selection = uiDoc.Selection;
-                            List<ElementId> selectedIds = selection.GetElementIds().ToList();
-                            foreach (ElementId elementID in selectedIds)
+                            string panelName = panel.Source.Title; // Ribbon Panel Name
+                            RibbonItemCollection collctn = panel.Source.Items;
+                            foreach (Autodesk.Windows.RibbonItem ri in collctn)
                             {
-                                if (doc.GetElement(elementID).Category != null)
+                                if (ri != null && !string.IsNullOrEmpty(ri.AutomationName))
                                 {
-                                    if (doc.GetElement(elementID).Category.Name == "Conduits")
+                                    if (ri != null && !string.IsNullOrEmpty(ri.AutomationName))
                                     {
-                                        SelectedElements.Add(doc.GetElement(elementID));
-                                        ChangesInformationForm.instance._selectedElements.Add(elementID);
+                                        if (ri is Autodesk.Windows.RibbonSplitButton splitButton)
+                                        {
+                                            string splitButtonName = splitButton.AutomationName; // SplitButton Name
+
+                                            RibbonItemCollection subItems = splitButton.Items;
+                                            foreach (Autodesk.Windows.RibbonItem subItem in subItems)
+                                            {
+                                                if (subItem != null && !string.IsNullOrEmpty(subItem.AutomationName))
+                                                {
+                                                    ///ALL TOOL NAMES
+                                                    string subItemName = subItem.AutomationName; // Sub-item Name
+
+                                                    if (subItemName == "AutoUpdate OFF" || subItemName == "AutoUpdate ON" || subItemName == "AutoUpdate")
+                                                        continue;
+
+                                                    if (!subItem.IsEnabled)
+                                                    {
+                                                        isDisabled = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            string mainItemName = ri.AutomationName;
+                                            if (mainItemName == "AutoUpdate OFF" || mainItemName == "AutoUpdate ON" || mainItemName == "AutoUpdate")
+                                                continue;
+
+                                            if (!ri.IsEnabled)
+                                            {
+                                                isDisabled = true;
+                                                break;
+                                            }
+                                        }
                                     }
                                 }
                             }
-                            if (selectedIds.Any())
+                            if (isDisabled) break;
+                        }
+                        if (isDisabled) break;
+                    }
+                }
+
+                if (!isDisabled)
+                {
+                    if (ToggleConPakToolsButton.Enabled || ToggleConPakToolsButtonSample.Enabled)
+                    {
+                        if (ToggleConPakToolsButton.ItemText == "AutoUpdate ON" || !ToggleConPakToolsButtonSample.Enabled)
+                        {
+                            List<Element> SelectedElements = new List<Element>();
+                            UIApplication uiApp = sender as UIApplication;
+                            UIDocument uiDoc = uiApp.ActiveUIDocument;
+                            Document doc = uiDoc.Document;
+                            if (doc != null && !doc.IsReadOnly)
                             {
-                                if (doc.GetElement(selectedIds.FirstOrDefault()).Category != null)
+                                //Select conduit
+                                Selection selection = uiDoc.Selection;
+                                List<ElementId> selectedIds = selection.GetElementIds().ToList();
+                                foreach (ElementId elementID in selectedIds)
                                 {
-                                    if (doc.GetElement(selectedIds.FirstOrDefault()).Category.Name == "Conduits")
+                                    if (doc.GetElement(elementID).Category != null)
                                     {
-                                        if (window == null)
+                                        if (doc.GetElement(elementID).Category.Name == "Conduits")
                                         {
-                                            if (SelectedElements != null && SelectedElements.Count > 0)
+                                            SelectedElements.Add(doc.GetElement(elementID));
+                                            ChangesInformationForm.instance._selectedElements.Add(elementID);
+                                        }
+                                    }
+                                }
+                                if (selectedIds.Any())
+                                {
+                                    if (doc.GetElement(selectedIds.FirstOrDefault()).Category != null)
+                                    {
+                                        if (doc.GetElement(selectedIds.FirstOrDefault()).Category.Name == "Conduits")
+                                        {
+                                            if (window == null)
                                             {
-                                                //Updater to be triggered only if no ends open
-                                                List<Element> elementlist = new List<Element>();
-                                                foreach (ElementId id in SelectedElements.Select(x => x.Id))
+                                                if (SelectedElements != null && SelectedElements.Count > 0)
                                                 {
-                                                    Element elem = doc.GetElement(id);
-                                                    if (elem.Category != null && elem.Category.Name == "Conduits")
+                                                    //Updater to be triggered only if no ends open
+                                                    List<Element> elementlist = new List<Element>();
+                                                    foreach (ElementId id in SelectedElements.Select(x => x.Id))
                                                     {
-                                                        elementlist.Add(elem);
+                                                        Element elem = doc.GetElement(id);
+                                                        if (elem.Category != null && elem.Category.Name == "Conduits")
+                                                        {
+                                                            elementlist.Add(elem);
+                                                        }
+                                                    }
+                                                    List<ElementId> FittingElem = new List<ElementId>();
+                                                    for (int i = 0; i < elementlist.Count; i++)
+                                                    {
+                                                        ConnectorSet connector = GetConnectorSet(elementlist[i]);
+                                                        List<ElementId> Icollect = new List<ElementId>();
+                                                        foreach (Connector connect in connector)
+                                                        {
+                                                            ConnectorSet cs1 = connect.AllRefs;
+                                                            foreach (Connector c in cs1)
+                                                            {
+                                                                Icollect.Add(c.Owner.Id);
+                                                            }
+                                                            foreach (ElementId eid in Icollect)
+                                                            {
+                                                                if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduit Fittings"))
+                                                                {
+                                                                    FittingElem.Add(eid);
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    List<ElementId> FittingElements = new List<ElementId>();
+                                                    FittingElements = FittingElem.Distinct().ToList();
+                                                    if (FittingElements.Count == (2 * (elementlist.Count)) && !isStatic)
+                                                    {
+                                                        window = new MainWindow();
+                                                        MainWindow.Instance.firstElement = new List<Element>();
+                                                        MainWindow.Instance.firstElement.AddRange(SelectedElements);
+                                                        MainWindow.Instance._document = doc;
+                                                        MainWindow.Instance._uiDocument = uiDoc;
+                                                        MainWindow.Instance._uiApplication = uiApp;
+                                                        window.Show();
+                                                    }
+                                                    else if (FittingElements.Count != (2 * (elementlist.Count)) && !isStatic)
+                                                    {
+                                                        Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel = null;
+                                                        string tabName = "Sanveo Tools";
+                                                        string panelName = "AutoConnect";
+                                                        string panelNameAU = "AutoUpdate";
+
+                                                        string executableLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+                                                        string dllLocation = Path.Combine(executableLocation, "AutoConnectPro.dll");
+
+                                                        List<Autodesk.Revit.UI.RibbonPanel> panels = uiApp.GetRibbonPanels(tabName);
+                                                        Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel01 = panels.FirstOrDefault(p => p.Name == panelName);
+                                                        Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel02 = panels.FirstOrDefault(p => p.Name == panelNameAU);
+                                                        bool ErrorOccured = false;
+                                                        if (autoUpdaterPanel01 != null)
+                                                        {
+                                                            IList<Autodesk.Revit.UI.RibbonItem> items = autoUpdaterPanel01.GetItems();
+
+                                                            foreach (Autodesk.Revit.UI.RibbonItem item in items)
+                                                            {
+                                                                if (item is PushButton pushButton && pushButton.ItemText == "AutoConnect ON")
+                                                                {
+                                                                    ErrorOccured = true;
+                                                                }
+                                                                else if (item.ItemText == "AutoConnect" && !item.Enabled && autoUpdaterPanel02.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoUpdate ON")
+                                                            && autoUpdaterPanel01.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoConnect OFF"))
+                                                                {
+                                                                    ErrorOccured = true;
+                                                                    BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
+                                                                    BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
+                                                                    ToggleConPakToolsButton.ItemText = "AutoUpdate OFF";
+                                                                    ToggleConPakToolsButton.LargeImage = OffLargeImage;
+                                                                    ToggleConPakToolsButton.Image = OffImage;
+                                                                    ToggleConPakToolsButtonSample.Enabled = true;
+                                                                }
+                                                            }
+                                                        }
+                                                        if (!ErrorOccured)
+                                                        {
+                                                            uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
+                                                            System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AUTOUPDATE", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                        }
                                                     }
                                                 }
-                                                List<ElementId> FittingElem = new List<ElementId>();
-                                                for (int i = 0; i < elementlist.Count; i++)
+                                                else
                                                 {
-                                                    ConnectorSet connector = GetConnectorSet(elementlist[i]);
-                                                    List<ElementId> Icollect = new List<ElementId>();
-                                                    foreach (Connector connect in connector)
+                                                    uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            try
+                            {
+                                List<Element> elementlist = new List<Element>();
+                                List<ElementId> rvConduitlist = new List<ElementId>();
+                                string value = string.Empty;
+                                foreach (ElementId id in SelectedElements.Select(x => x.Id))
+                                {
+                                    Element elem = doc.GetElement(id);
+                                    if (elem.Category != null && elem.Category.Name == "Conduits")
+                                    {
+                                        elementlist.Add(elem);
+                                    }
+                                }
+                                ChangesInformationForm.instance.MidSaddlePt = elementlist.Distinct().ToList();
+                                ChangesInformationForm.instance._elemIdone.Clear();
+                                ChangesInformationForm.instance._elemIdtwo.Clear();
+                                List<ElementId> FittingElem = new List<ElementId>();
+                                for (int i = 0; i < elementlist.Count; i++)
+                                {
+                                    ConnectorSet connector = GetConnectorSet(elementlist[i]);
+                                    List<ElementId> Icollect = new List<ElementId>();
+                                    foreach (Connector connect in connector)
+                                    {
+                                        ConnectorSet cs1 = connect.AllRefs;
+                                        foreach (Connector c in cs1)
+                                        {
+                                            Icollect.Add(c.Owner.Id);
+                                        }
+                                        foreach (ElementId eid in Icollect)
+                                        {
+                                            if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduit Fittings"))
+                                            {
+                                                FittingElem.Add(eid);
+                                            }
+                                        }
+                                    }
+                                }
+                                List<ElementId> FittingElements = new List<ElementId>();
+                                FittingElements = FittingElem.Distinct().ToList();
+                                List<Element> BendElements = new List<Element>();
+                                foreach (ElementId id in FittingElements)
+                                {
+                                    BendElements.Add(doc.GetElement(id));
+                                }
+                                if (MainWindow.Instance != null)
+                                {
+                                    MainWindow.Instance._bendElements = BendElements;
+                                }
+                                List<ElementId> Icollector = new List<ElementId>();
+                                for (int i = 0; i < BendElements.Count; i++)
+                                {
+                                    ConnectorSet connector = GetConnectorSet(BendElements[i]);
+                                    foreach (Connector connect in connector)
+                                    {
+                                        ConnectorSet cs1 = connect.AllRefs;
+                                        foreach (Connector c in cs1)
+                                        {
+                                            Icollector.Add(c.Owner.Id);
+                                        }
+                                    }
+                                }
+                                foreach (ElementId eid in Icollector)
+                                {
+                                    if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduits"))
+                                    {
+                                        ChangesInformationForm.instance._selectedElements.Add(eid);
+                                    }
+                                }
+                                List<Element> elementtwo = new List<Element>();
+                                List<ElementId> RefID = new List<ElementId>();
+
+                                for (int i = 0; i < BendElements.Count; i++)
+                                {
+                                    for (int j = i + 1; j < BendElements.Count; j++)
+                                    {
+                                        Element elemOne = BendElements[i];
+                                        Element elemTwo = BendElements[j];
+
+                                        if (elemOne != null)
+                                        {
+                                            ConnectorSet firstconnector = GetConnectorSet(elemOne);
+                                            ConnectorSet secondconnector = GetConnectorSet(elemTwo);
+                                            try
+                                            {
+                                                List<ElementId> IDone = new List<ElementId>();
+                                                foreach (Connector connector in firstconnector)
+                                                {
+                                                    ConnectorSet cs1 = connector.AllRefs;
+                                                    foreach (Connector c in cs1)
                                                     {
-                                                        ConnectorSet cs1 = connect.AllRefs;
-                                                        foreach (Connector c in cs1)
+                                                        IDone.Add(c.Owner.Id);
+                                                    }
+                                                    foreach (ElementId eid in IDone)
+                                                    {
+                                                        if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduits"))
                                                         {
-                                                            Icollect.Add(c.Owner.Id);
+                                                            ChangesInformationForm.instance._elemIdone.Add(eid);
                                                         }
-                                                        foreach (ElementId eid in Icollect)
+                                                    }
+                                                }
+                                                List<ElementId> IDtwo = new List<ElementId>();
+                                                foreach (Connector connector in secondconnector)
+                                                {
+                                                    ConnectorSet cs1 = connector.AllRefs;
+                                                    foreach (Connector c in cs1)
+                                                    {
+                                                        IDtwo.Add(c.Owner.Id);
+                                                    }
+                                                    foreach (ElementId eid in IDtwo)
+                                                    {
+                                                        if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduits"))
                                                         {
-                                                            if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduit Fittings"))
+                                                            ChangesInformationForm.instance._elemIdtwo.Add(eid);
+                                                            if (ChangesInformationForm.instance._elemIdone.Any(r => r == eid))
                                                             {
-                                                                FittingElem.Add(eid);
+                                                                ChangesInformationForm.instance._deletedIds.Add(eid);
+                                                                rvConduitlist.Add(eid);
                                                             }
                                                         }
                                                     }
                                                 }
-                                                List<ElementId> FittingElements = new List<ElementId>();
-                                                FittingElements = FittingElem.Distinct().ToList();
-                                                if (FittingElements.Count == (2 * (elementlist.Count)) && !isStatic)
-                                                {
-                                                    window = new MainWindow();
-                                                    MainWindow.Instance.firstElement = new List<Element>();
-                                                    MainWindow.Instance.firstElement.AddRange(SelectedElements);
-                                                    MainWindow.Instance._document = doc;
-                                                    MainWindow.Instance._uiDocument = uiDoc;
-                                                    MainWindow.Instance._uiApplication = uiApp;
-                                                    window.Show();
-                                                }
-                                                else if (FittingElements.Count != (2 * (elementlist.Count)) && !isStatic)
-                                                {
-                                                    Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel = null;
-                                                    string tabName = "Sanveo Tools";
-                                                    string panelName = "AutoConnect";
-                                                    string panelNameAU = "AutoUpdate";
-
-                                                    string executableLocation = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-                                                    string dllLocation = Path.Combine(executableLocation, "AutoConnectPro.dll");
-
-                                                    List<Autodesk.Revit.UI.RibbonPanel> panels = uiApp.GetRibbonPanels(tabName);
-                                                    Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel01 = panels.FirstOrDefault(p => p.Name == panelName);
-                                                    Autodesk.Revit.UI.RibbonPanel autoUpdaterPanel02 = panels.FirstOrDefault(p => p.Name == panelNameAU);
-                                                    bool ErrorOccured = false;
-                                                    if (autoUpdaterPanel01 != null)
-                                                    {
-                                                        IList<RibbonItem> items = autoUpdaterPanel01.GetItems();
-
-                                                        foreach (RibbonItem item in items)
-                                                        {
-                                                            if (item is PushButton pushButton && pushButton.ItemText == "AutoConnect ON")
-                                                            {
-                                                                ErrorOccured = true;
-                                                            }
-                                                            else if (item.ItemText == "AutoConnect" && !item.Enabled && autoUpdaterPanel02.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoUpdate ON")
-                                                        && autoUpdaterPanel01.GetItems().OfType<PushButton>().Any(btn => btn.ItemText == "AutoConnect OFF"))
-                                                            {
-                                                                ErrorOccured = true;
-                                                                BitmapImage OffLargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
-                                                                BitmapImage OffImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
-                                                                ToggleConPakToolsButton.ItemText = "AutoUpdate OFF";
-                                                                ToggleConPakToolsButton.LargeImage = OffLargeImage;
-                                                                ToggleConPakToolsButton.Image = OffImage;
-                                                                ToggleConPakToolsButtonSample.Enabled = true;
-                                                            }
-                                                        }
-                                                    }
-                                                    if (!ErrorOccured)
-                                                    {
-                                                        uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
-                                                        System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AUTOUPDATE", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                                    }
-                                                }
+                                                ChangesInformationForm.instance._deletedIds.Add(elemOne.Id);
+                                                ChangesInformationForm.instance._deletedIds.Add(elemTwo.Id);
+                                                var l = rvConduitlist.Distinct();
+                                                ChangesInformationForm.instance._selectedElements = ChangesInformationForm.instance._selectedElements.Except(l).ToList();
                                             }
-                                            else
+                                            catch
                                             {
-                                                uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
                                             }
                                         }
                                     }
                                 }
+                            }
+                            catch
+                            {
+
                             }
                         }
-                        try
-                        {
-                            List<Element> elementlist = new List<Element>();
-                            List<ElementId> rvConduitlist = new List<ElementId>();
-                            string value = string.Empty;
-                            foreach (ElementId id in SelectedElements.Select(x => x.Id))
-                            {
-                                Element elem = doc.GetElement(id);
-                                if (elem.Category != null && elem.Category.Name == "Conduits")
-                                {
-                                    elementlist.Add(elem);
-                                }
-                            }
-                            ChangesInformationForm.instance.MidSaddlePt = elementlist.Distinct().ToList();
-                            ChangesInformationForm.instance._elemIdone.Clear();
-                            ChangesInformationForm.instance._elemIdtwo.Clear();
-                            List<ElementId> FittingElem = new List<ElementId>();
-                            for (int i = 0; i < elementlist.Count; i++)
-                            {
-                                ConnectorSet connector = GetConnectorSet(elementlist[i]);
-                                List<ElementId> Icollect = new List<ElementId>();
-                                foreach (Connector connect in connector)
-                                {
-                                    ConnectorSet cs1 = connect.AllRefs;
-                                    foreach (Connector c in cs1)
-                                    {
-                                        Icollect.Add(c.Owner.Id);
-                                    }
-                                    foreach (ElementId eid in Icollect)
-                                    {
-                                        if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduit Fittings"))
-                                        {
-                                            FittingElem.Add(eid);
-                                        }
-                                    }
-                                }
-                            }
-                            List<ElementId> FittingElements = new List<ElementId>();
-                            FittingElements = FittingElem.Distinct().ToList();
-                            List<Element> BendElements = new List<Element>();
-                            foreach (ElementId id in FittingElements)
-                            {
-                                BendElements.Add(doc.GetElement(id));
-                            }
-                            if (MainWindow.Instance != null)
-                            {
-                                MainWindow.Instance._bendElements = BendElements;
-                            }
-                            List<ElementId> Icollector = new List<ElementId>();
-                            for (int i = 0; i < BendElements.Count; i++)
-                            {
-                                ConnectorSet connector = GetConnectorSet(BendElements[i]);
-                                foreach (Connector connect in connector)
-                                {
-                                    ConnectorSet cs1 = connect.AllRefs;
-                                    foreach (Connector c in cs1)
-                                    {
-                                        Icollector.Add(c.Owner.Id);
-                                    }
-                                }
-                            }
-                            foreach (ElementId eid in Icollector)
-                            {
-                                if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduits"))
-                                {
-                                    ChangesInformationForm.instance._selectedElements.Add(eid);
-                                }
-                            }
-                            List<Element> elementtwo = new List<Element>();
-                            List<ElementId> RefID = new List<ElementId>();
+                    }
+                }
+                else if (isDisabled) //Another Tool ON
+                {
+                    if (ToggleConPakToolsButton.ItemText == "AutoUpdate ON")
+                    {
+                        ToggleConPakToolsButton.ItemText = "AutoUpdate OFF";
 
-                            for (int i = 0; i < BendElements.Count; i++)
-                            {
-                                for (int j = i + 1; j < BendElements.Count; j++)
-                                {
-                                    Element elemOne = BendElements[i];
-                                    Element elemTwo = BendElements[j];
-
-                                    if (elemOne != null)
-                                    {
-                                        ConnectorSet firstconnector = GetConnectorSet(elemOne);
-                                        ConnectorSet secondconnector = GetConnectorSet(elemTwo);
-                                        try
-                                        {
-                                            List<ElementId> IDone = new List<ElementId>();
-                                            foreach (Connector connector in firstconnector)
-                                            {
-                                                ConnectorSet cs1 = connector.AllRefs;
-                                                foreach (Connector c in cs1)
-                                                {
-                                                    IDone.Add(c.Owner.Id);
-                                                }
-                                                foreach (ElementId eid in IDone)
-                                                {
-                                                    if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduits"))
-                                                    {
-                                                        ChangesInformationForm.instance._elemIdone.Add(eid);
-                                                    }
-                                                }
-                                            }
-                                            List<ElementId> IDtwo = new List<ElementId>();
-                                            foreach (Connector connector in secondconnector)
-                                            {
-                                                ConnectorSet cs1 = connector.AllRefs;
-                                                foreach (Connector c in cs1)
-                                                {
-                                                    IDtwo.Add(c.Owner.Id);
-                                                }
-                                                foreach (ElementId eid in IDtwo)
-                                                {
-                                                    if (doc.GetElement(eid) != null && (doc.GetElement(eid).Category != null && doc.GetElement(eid).Category.Name == "Conduits"))
-                                                    {
-                                                        ChangesInformationForm.instance._elemIdtwo.Add(eid);
-                                                        if (ChangesInformationForm.instance._elemIdone.Any(r => r == eid))
-                                                        {
-                                                            ChangesInformationForm.instance._deletedIds.Add(eid);
-                                                            rvConduitlist.Add(eid);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            ChangesInformationForm.instance._deletedIds.Add(elemOne.Id);
-                                            ChangesInformationForm.instance._deletedIds.Add(elemTwo.Id);
-                                            var l = rvConduitlist.Distinct();
-                                            ChangesInformationForm.instance._selectedElements = ChangesInformationForm.instance._selectedElements.Except(l).ToList();
-                                        }
-                                        catch
-                                        {
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch
-                        {
-
-                        }
+                        ToggleConPakToolsButton.LargeImage = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-32X32-red.png"));
+                        ToggleConPakToolsButton.Image = new BitmapImage(new Uri("pack://application:,,,/AutoUpdaterPro;component/Resources/Auto-update-16X16-red.png"));
+                        ToggleConPakToolsButtonSample.Enabled = true;
                     }
                 }
             }
