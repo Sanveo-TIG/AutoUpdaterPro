@@ -288,7 +288,8 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                     ///ALL TOOL NAMES
                                                     string subItemName = subItem.AutomationName; // Sub-item Name
 
-                                                    if (subItemName == "AutoUpdate OFF" || subItemName == "AutoUpdate ON" || subItemName == "AutoUpdate")
+                                                    if (subItemName == "AutoUpdate OFF" || subItemName == "AutoUpdate ON" || subItemName == "AutoUpdate" ||
+                                                        subItemName == "AutoConnect OFF" || subItemName == "AutoConnect ON" || subItemName == "AutoConnect")
                                                         continue;
 
                                                     if (!subItem.IsEnabled)
@@ -302,7 +303,8 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                         else
                                         {
                                             string mainItemName = ri.AutomationName;
-                                            if (mainItemName == "AutoUpdate OFF" || mainItemName == "AutoUpdate ON" || mainItemName == "AutoUpdate")
+                                            if (mainItemName == "AutoUpdate OFF" || mainItemName == "AutoUpdate ON" || mainItemName == "AutoUpdate" ||
+                                                mainItemName == "AutoConnect OFF" || mainItemName == "AutoConnect ON" || mainItemName == "AutoConnect")
                                                 continue;
 
                                             if (!ri.IsEnabled)
