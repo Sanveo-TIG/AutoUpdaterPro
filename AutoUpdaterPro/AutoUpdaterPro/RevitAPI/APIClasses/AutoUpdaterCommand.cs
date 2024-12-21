@@ -21,7 +21,7 @@ namespace AutoUpdaterPro
             {
                 if (ExternalApplication.ToggleConPakToolsButtonSample != null && ExternalApplication.ToggleConPakToolsButtonSample.Enabled)
                 {
-                    if (Utility.HasValidLicense("Public"))
+                    if(Utility.HasValidLicense("Public"))
                     {
                         if (Utility.ReadPremiumLicense("AutoUpdate"))
                         {

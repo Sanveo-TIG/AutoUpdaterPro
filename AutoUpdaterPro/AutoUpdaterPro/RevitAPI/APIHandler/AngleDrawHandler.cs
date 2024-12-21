@@ -7,6 +7,7 @@ using Newtonsoft.Json;
 using Revit.SDK.Samples.AutoUpdaterPro.CS;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Runtime.InteropServices;
@@ -32,6 +33,10 @@ namespace AutoUpdaterPro
         List<Element> DistanceElements = new List<Element>();
         public bool successful;
         bool _isfirst;
+        public static XYZ _previousXYZ = null;
+        Dictionary<int, List<Element>> _dictReorderStub = new Dictionary<int, List<Element>>();
+        public static Conduit otherConduit = null;
+        public bool isStubCreate = true;
         public void Execute(UIApplication uiApp)
         {
             UIDocument _uiDoc = uiApp.ActiveUIDocument;
@@ -55,10 +60,18 @@ namespace AutoUpdaterPro
                         AutoUpdater(uiApp, SelectedElements);
                     }
                     var delete = ChangesInformationForm.instance._deletedIds.Distinct().ToList();
-                    if (successful && delete != null)
+                    try
                     {
-                        _doc.Delete(delete);
+                        if (successful && delete != null)
+                        {
+                            _doc.Delete(delete);
+                        }
                     }
+                    catch
+                    {
+
+                    }
+                   
                     delete.Clear();
                 }
                 transaction.Commit();
@@ -120,18 +133,342 @@ namespace AutoUpdaterPro
                 if (SelectedElements.Count() != 0)
                 {
                     List<Element> conduitCollection = new List<Element>();
-
-                    using (SubTransaction tx = new SubTransaction(doc))
+                    Dictionary<int, List<ConduitGrid>> CongridDictionary1 = GroupStubElements(SelectedElements);
+                    Dictionary<double, List<Element>> group = new Dictionary<double, List<Element>>();
+                    if (CongridDictionary1.Count == 2)
                     {
-                        tx.Start();
+                        List<Element> dictFirstElement = CongridDictionary1.First().Value.Select(x => x.Conduit).ToList();
+                        List<Element> dictSecondElement = CongridDictionary1.Last().Value.Select(x => x.Conduit).ToList();
 
-                        var CongridDictionary1 = Utility.GroupByElements(SelectedElements);
-                        Dictionary<double, List<Element>> group = new Dictionary<double, List<Element>>();
-
-                        if (CongridDictionary1.Count == 2)
+                        //STUB PROCESS
+                        List<Element> dictSecondElementDUP = new List<Element>();
+                        List<Element> dictFirstElementDUP = new List<Element>();
+                        List<KeyValuePair<double, List<Element>>> elementPairsFirst = new List<KeyValuePair<double, List<Element>>>();
+                        List<KeyValuePair<double, List<Element>>> elementPairsSecond = new List<KeyValuePair<double, List<Element>>>();
+                        Dictionary<double, List<Element>> stubGroupPrimary = GroupByElementsWithElevation(dictFirstElement, offsetVariable);
+                        //Order the Vertical Conduits for Stub Down
+                        //using (Transaction transOrder = new Transaction(doc))
+                        //{
+                        //    transOrder.Start("Order the Vertical Conduits");
+                        List<Element> primaryelementCountStub = stubGroupPrimary.FirstOrDefault().Value;
+                        Dictionary<XYZ, Element> multiorderthePrimaryElementsStub = new Dictionary<XYZ, Element>();
+                        Dictionary<XYZ, Element> multiordertheSecondaryElementsStub = new Dictionary<XYZ, Element>();
+                        List<Element> GroupedPrimaryElementStub = new List<Element>();
+                        List<Element> GroupedSecondaryElementStub = new List<Element>();
+                        List<Element> _firstKickGroupStub = new List<Element>();
+                        List<Element> _secondKickGroupStub = new List<Element>();
+                        List<Element> primaryEGroupedviaZStub = new List<Element>();
+                        List<XYZ> primaryXYZGroupedviaZStub = new List<XYZ>();
+                        bool isangledVerticalConduitsStub = false;
+                        foreach (Element element in dictFirstElement)
                         {
-                            Dictionary<double, List<Element>> groupPrimary = Utility.GroupByElementsWithElevation(CongridDictionary1.First().Value.Select(x => x.Conduit).ToList(), offsetVariable);
-                            Dictionary<double, List<Element>> groupSecondary = Utility.GroupByElementsWithElevation(CongridDictionary1.Last().Value.Select(x => x.Conduit).ToList(), offsetVariable);
+                            XYZ xyzPelement = ((element.Location as LocationCurve).Curve as Line).Origin;
+                            multiorderthePrimaryElementsStub.Add(xyzPelement, element);
+                        }
+                        foreach (Element element in dictSecondElement)
+                        {
+                            XYZ xyzPelement = ((element.Location as LocationCurve).Curve as Line).Origin;
+                            multiordertheSecondaryElementsStub.Add(xyzPelement, element);
+                        }
+                        //STUB DOWN MULTI LAYER
+                        if (stubGroupPrimary.Count > 1)
+                        {
+                            Dictionary<double, List<Element>> sortedGroupPrimaryStub = stubGroupPrimary.OrderByDescending(kvp => kvp.Key).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                            foreach (KeyValuePair<double, List<Element>> pair in stubGroupPrimary)
+                            {
+                                GroupedPrimaryElementStub.AddRange(pair.Value);
+                            }
+                            List<XYZ> xyzPS = multiordertheSecondaryElementsStub.Select(x => x.Key).ToList();
+                            List<XYZ> roundOFF = new List<XYZ>();
+                            foreach (var xyz in xyzPS)
+                            {
+                                XYZ roundedXYZ = new XYZ(Math.Round(xyz.X, 5), Math.Round(xyz.Y, 5), Math.Round(xyz.Z, 5));
+                                roundOFF.Add(roundedXYZ);
+                            }
+                            bool hasDuplicateY = HasDuplicateYCoordinates(roundOFF);
+                            Dictionary<double, List<Element>> dictSecondaryElementStub = new Dictionary<double, List<Element>>();
+                            if (hasDuplicateY)
+                            {
+                                _previousXYZ = null;
+                                int i = 0;
+                                do
+                                {
+                                    List<XYZ> xyzListPrimary = new List<XYZ>();
+                                    List<XYZ> xyzListSecondary = new List<XYZ>();
+                                    xyzListSecondary.AddRange(multiordertheSecondaryElementsStub.Select(x => x.Key));
+                                    List<Element> Sele = FindCornerConduitsStub(multiordertheSecondaryElementsStub, xyzListSecondary, doc, isangledVerticalConduitsStub, primaryelementCountStub);
+                                    dictSecondaryElementStub.Add(i, Sele);
+                                    GroupedSecondaryElementStub.AddRange(Sele);
+                                    i++;
+                                    multiordertheSecondaryElementsStub = multiordertheSecondaryElementsStub.Where(kvp => !GroupedSecondaryElementStub.Any(e => e.Id == kvp.Value.Id))
+                                                                   .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                }
+                                while (multiordertheSecondaryElementsStub.Count > 0);
+                            }
+                            else
+                            {
+                                isangledVerticalConduitsStub = true;
+                                _previousXYZ = null;
+                                int i = 0;
+                                do
+                                {
+                                    List<XYZ> xyzListPrimary = new List<XYZ>();
+                                    List<XYZ> xyzListSecondary = new List<XYZ>();
+                                    xyzListSecondary.AddRange(multiordertheSecondaryElementsStub.Select(x => x.Key));
+                                    List<Element> Sele = FindCornerConduitsStub(multiordertheSecondaryElementsStub, xyzListSecondary, doc, isangledVerticalConduitsStub, primaryelementCountStub);
+                                    dictSecondaryElementStub.Add(i, Sele);
+                                    GroupedSecondaryElementStub.AddRange(Sele);
+                                    i++;
+                                    multiordertheSecondaryElementsStub = multiordertheSecondaryElementsStub.Where(kvp => !GroupedSecondaryElementStub.Any(e => e.Id == kvp.Value.Id))
+                                                                   .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                }
+                                while (multiordertheSecondaryElementsStub.Count > 0);
+                            }
+                            int q = 0;
+                            Dictionary<double, List<Element>> _dictGetMatchElementfromFirst = new Dictionary<double, List<Element>>();
+                            Dictionary<double, List<Element>> _dictGetMatchElementfromSecond = new Dictionary<double, List<Element>>();
+                            do
+                            {
+                                Dictionary<Line, Element> _dictlineelementStub = new Dictionary<Line, Element>();
+                                List<Element> highestElevation = sortedGroupPrimaryStub.Values.FirstOrDefault();
+                                List<Element> storedSecondaryElement = new List<Element>();
+                                for (int i = 0; i < 1; i++)
+                                {
+                                    ConnectorSet PrimaryConnectors = Utility.GetConnectorSet(highestElevation[i]);
+                                    foreach (KeyValuePair<double, List<Element>> dec in dictSecondaryElementStub)
+                                    {
+                                        ConnectorSet SecondaryConnectors = Utility.GetConnectorSet(dec.Value.FirstOrDefault());
+                                        Utility.GetClosestConnectors(PrimaryConnectors, SecondaryConnectors, out Connector ConnectorOne, out Connector ConnectorTwo);
+                                        Line checkline = Line.CreateBound(Utility.GetXYvalue(ConnectorOne.Origin), Utility.GetXYvalue(ConnectorTwo.Origin));
+                                        _dictlineelementStub.Add(checkline, dec.Value.FirstOrDefault());
+                                       
+                                    }
+                                    double secElevation = (((dictSecondaryElementStub.Values.FirstOrDefault().FirstOrDefault().Location as LocationCurve).Curve) as Line).Origin.Z;
+                                    double priElevation = (((highestElevation[i].Location as LocationCurve).Curve) as Line).Origin.Z;
+                                    Line distanceLine = null;
+                                    if (priElevation > secElevation)
+                                    {
+                                        distanceLine = _dictlineelementStub.Keys.OrderByDescending(line => line.Length).FirstOrDefault();
+                                    }
+                                    else if (priElevation < secElevation)
+                                    {
+                                        distanceLine = _dictlineelementStub.Keys.OrderBy(line => line.Length).FirstOrDefault();
+                                    }
+                                    Element distanceLineElement = _dictlineelementStub.Where(kvp => kvp.Key == distanceLine).Select(kvp => kvp.Value).FirstOrDefault();
+                                    List<Element> sec = dictSecondaryElementStub.Where(kvp => kvp.Value.Any(x => x == distanceLineElement))
+                                                                                .Select(kvp => kvp.Value).FirstOrDefault();
+
+                                    Dictionary<XYZ, Element> orderXYZStub = new Dictionary<XYZ, Element>();
+                                    foreach (Element secele in sec)
+                                    {
+                                        XYZ xyz = (((secele.Location as LocationCurve).Curve) as Line).Origin;
+                                        orderXYZStub.Add(xyz, secele);
+                                    }
+                                    orderXYZStub = orderXYZStub.OrderByDescending(kvp => kvp.Key.Y).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                    List<Element> secOrder = orderXYZStub.Select(x => x.Value).ToList();
+                                    _secondKickGroupStub.AddRange(secOrder);
+                                    if (_dictGetMatchElementfromSecond.ContainsKey(((secOrder[0].Location as LocationCurve).Curve as Line).Origin.Z))
+                                    {
+                                        _dictGetMatchElementfromSecond[((secOrder[0].Location as LocationCurve).Curve as Line).Origin.Z].AddRange(secOrder);
+                                    }
+                                    else
+                                    {
+                                        _dictGetMatchElementfromSecond.Add(((secOrder[0].Location as LocationCurve).Curve as Line).Origin.Z, secOrder);
+                                    }
+                                    storedSecondaryElement.AddRange(secOrder);
+                                    _dictReorderStub.Add(q, storedSecondaryElement);
+                                    q++;
+                                    dictSecondaryElementStub.Remove(dictSecondaryElementStub.FirstOrDefault(kvp => kvp.Value == sec).Key);
+                                    if (dictSecondaryElementStub.Count == 1)
+                                    {
+                                        storedSecondaryElement = new List<Element>();
+                                        orderXYZStub = new Dictionary<XYZ, Element>();
+                                        foreach (Element secele in dictSecondaryElementStub.Values.FirstOrDefault())
+                                        {
+                                            XYZ xyz = (((secele.Location as LocationCurve).Curve) as Line).Origin;
+                                            orderXYZStub.Add(xyz, secele);
+                                        }
+                                        orderXYZStub = orderXYZStub.OrderByDescending(kvp => kvp.Key.Y).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                        secOrder = orderXYZStub.Select(x => x.Value).ToList();
+                                        _secondKickGroupStub.AddRange(secOrder);
+                                        if (_dictGetMatchElementfromSecond.ContainsKey(((secOrder[0].Location as LocationCurve).Curve as Line).Origin.Z))
+                                        {
+                                            _dictGetMatchElementfromSecond[((secOrder[0].Location as LocationCurve).Curve as Line).Origin.Z].AddRange(secOrder);
+                                        }
+                                        else
+                                        {
+                                            _dictGetMatchElementfromSecond.Add(((secOrder[0].Location as LocationCurve).Curve as Line).Origin.Z, secOrder);
+                                        }
+                                        storedSecondaryElement.AddRange(secOrder);
+                                        storedSecondaryElement.AddRange(secOrder);
+                                        _dictReorderStub.Add(q, storedSecondaryElement);
+                                        dictSecondaryElementStub.Clear();
+                                    }
+                                }
+
+                                List<Element> pri = sortedGroupPrimaryStub.Where(kvp => kvp.Value.Any(x => x == highestElevation.FirstOrDefault()))
+                                                                      .Select(kvp => kvp.Value).FirstOrDefault();
+                                _firstKickGroupStub.AddRange(pri);
+                                if (_dictGetMatchElementfromFirst.ContainsKey(((pri[0].Location as LocationCurve).Curve as Line).Origin.Z))
+                                {
+                                    _dictGetMatchElementfromFirst[((pri[0].Location as LocationCurve).Curve as Line).Origin.Z].AddRange(pri);
+                                }
+                                else
+                                {
+                                    _dictGetMatchElementfromFirst.Add(((pri[0].Location as LocationCurve).Curve as Line).Origin.Z, pri);
+                                }
+                                sortedGroupPrimaryStub.Remove(sortedGroupPrimaryStub.FirstOrDefault(kvp => kvp.Value == pri).Key);
+                                if (sortedGroupPrimaryStub.Count == 1)
+                                {
+                                    _firstKickGroupStub.AddRange(sortedGroupPrimaryStub.Values.FirstOrDefault());
+                                    if (_dictGetMatchElementfromFirst.ContainsKey(((sortedGroupPrimaryStub.Values.FirstOrDefault()[0].Location as LocationCurve).Curve as Line).Origin.Z))
+                                    {
+                                        _dictGetMatchElementfromFirst[((sortedGroupPrimaryStub.Values.FirstOrDefault()[0].Location as LocationCurve).Curve as Line).Origin.Z].
+                                            AddRange(sortedGroupPrimaryStub.Values.FirstOrDefault());
+                                    }
+                                    else
+                                    {
+                                        _dictGetMatchElementfromFirst.Add(((sortedGroupPrimaryStub.Values.FirstOrDefault()[0].Location as LocationCurve).Curve as Line).Origin.Z,
+                                            sortedGroupPrimaryStub.Values.FirstOrDefault());
+                                    }
+                                    sortedGroupPrimaryStub.Clear();
+                                }
+                            }
+                            while (sortedGroupPrimaryStub.Count > 1 && sortedGroupPrimaryStub.Count == dictSecondaryElementStub.Count);
+                            List<KeyValuePair<Element, double>> orderedList = new List<KeyValuePair<Element, double>>();
+                            elementPairsFirst = _dictGetMatchElementfromFirst.OrderByDescending(kvp => kvp.Key).ToList();
+                            elementPairsSecond = _dictGetMatchElementfromSecond.OrderByDescending(kvp => kvp.Key).ToList();
+                            if (elementPairsFirst.Count == elementPairsSecond.Count)
+                            {
+                                List<double> firstDictKeys = new List<double>();
+                                List<double> secondDictKeys = new List<double>();
+                                foreach (KeyValuePair<double, List<Element>> pairs in elementPairsFirst)
+                                {
+                                    firstDictKeys.Add(pairs.Key);
+                                }
+                                foreach (KeyValuePair<double, List<Element>> pairs in elementPairsSecond)
+                                {
+                                    secondDictKeys.Add(pairs.Key);
+                                }
+                                for (int c = 0; c < firstDictKeys.Count; c++)
+                                {
+                                    Dictionary<Element, double> ordertheLineLengthStub = new Dictionary<Element, double>();
+                                    List<Element> firstList = new List<Element>();
+                                    List<Element> secondList = new List<Element>();
+                                    double firstKey = firstDictKeys[c];
+                                    List<Element> firstElements = _dictGetMatchElementfromFirst[firstKey];
+                                    firstList.AddRange(firstElements);
+                                    ConnectorSet FirstConnectors = Utility.GetConnectorSet(firstList.FirstOrDefault());
+                                    double secondKey = secondDictKeys[c];
+                                    List<Element> secondElements = _dictGetMatchElementfromSecond[secondKey];
+                                    secondList.AddRange(secondElements);
+                                    for (int k = 0; k < secondList.Count; k++)
+                                    {
+                                        Element fl = secondList[k];
+                                        ConnectorSet SecondConnectors = Utility.GetConnectorSet(fl);
+                                        Utility.GetClosestConnectors(FirstConnectors, SecondConnectors, out Connector ConnectorFirst, out Connector ConnectorSecond);
+                                        Line line = Line.CreateBound(new XYZ(ConnectorFirst.Origin.X, ConnectorFirst.Origin.Y, 0),
+                                                                     new XYZ(ConnectorSecond.Origin.X, ConnectorSecond.Origin.Y, 0));
+                                        ordertheLineLengthStub.Add(fl, Math.Round(line.Length, 4));//
+                                                                                                   // StubExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
+                                    }
+                                    orderedList = ordertheLineLengthStub.OrderBy(kvp => kvp.Value).ToList();
+                                    foreach (KeyValuePair<Element, double> kvpEle in orderedList)
+                                    {
+                                        dictSecondElementDUP.Add(kvpEle.Key);
+                                    }
+                                    dictFirstElementDUP.AddRange(firstElements);
+                                }
+                            }
+                            else
+                            {
+                                List<Element> firstElements = new List<Element>();
+                                List<Element> secondElements = new List<Element>();
+                                foreach (KeyValuePair<double, List<Element>> pairs in elementPairsFirst)
+                                {
+                                    firstElements.AddRange(pairs.Value);
+                                }
+                                secondElements = elementPairsSecond.Select(x => x.Value).FirstOrDefault();
+                                ConnectorSet FirstConnectors = Utility.GetConnectorSet(firstElements[0]);
+                                Dictionary<Element, double> ordertheLineLength = new Dictionary<Element, double>();
+                                foreach (Element secEle in secondElements)
+                                {
+                                    ConnectorSet SecondConnectors = Utility.GetConnectorSet(secEle);
+                                    Utility.GetClosestConnectors(FirstConnectors, SecondConnectors, out Connector ConnectorFirst, out Connector ConnectorSecond);
+                                    Line line = Line.CreateBound(new XYZ(ConnectorFirst.Origin.X, ConnectorFirst.Origin.Y, 0),
+                                                              new XYZ(ConnectorSecond.Origin.X, ConnectorSecond.Origin.Y, 0));
+                                    ordertheLineLength.Add(secEle, Math.Round(line.Length, 4));
+                                   
+                                }
+                                orderedList = ordertheLineLength.OrderBy(kvp => kvp.Value).ToList();
+                                foreach (KeyValuePair<Element, double> kvpEle in orderedList)
+                                {
+                                    dictSecondElementDUP.Add(kvpEle.Key);
+                                }
+                                dictFirstElementDUP.AddRange(firstElements);
+                                isStubCreate = false;//because of elevation same in vertical conduits ,it need varying elevation in layers
+
+                            }
+
+                        }
+                        //STUB DOWN SINGLE LAYER ORDER
+                        else
+                        {
+                            ConnectorSet FirstConnectors = Utility.GetConnectorSet(dictFirstElement[0]);
+                            Dictionary<Element, double> ordertheLineLength = new Dictionary<Element, double>();
+                            foreach (Element secEle in dictSecondElement)
+                            {
+                                ConnectorSet SecondConnectors = Utility.GetConnectorSet(secEle);
+                                Utility.GetClosestConnectors(FirstConnectors, SecondConnectors, out Connector ConnectorFirst, out Connector ConnectorSecond);
+                                Line line = Line.CreateBound(new XYZ(ConnectorFirst.Origin.X, ConnectorFirst.Origin.Y, 0),
+                                                          new XYZ(ConnectorSecond.Origin.X, ConnectorSecond.Origin.Y, 0));
+                                ///doc.Create.NewDetailCurve(doc.ActiveView, line as Curve);
+                                ordertheLineLength.Add(secEle, Math.Round(line.Length, 4));
+                            }
+                            List<KeyValuePair<Element, double>> orderedList = ordertheLineLength.OrderBy(kvp => kvp.Value).ToList();
+                            foreach (KeyValuePair<Element, double> kvpEle in orderedList)
+                            {
+                                dictSecondElementDUP.Add(kvpEle.Key);
+                            }
+                            dictFirstElementDUP = dictFirstElement;
+                           
+
+
+                        }
+                        //    transOrder.Commit();
+                        //}
+                        LocationCurve locCurve2 = null;
+                        LocationCurve locCurve1 = null;
+                        Line connectLine = null;
+                        if (dictFirstElementDUP.Count > 0 && dictSecondElementDUP.Count > 0)
+                        {
+                            locCurve1 = dictFirstElementDUP[0].Location as LocationCurve;
+                            locCurve2 = dictSecondElementDUP[0].Location as LocationCurve;
+                            XYZ startPoint = Utility.GetXYvalue(locCurve1.Curve.GetEndPoint(0));
+                            XYZ endPoint = Utility.GetXYvalue(locCurve2.Curve.GetEndPoint(1));
+                            connectLine = Line.CreateBound(startPoint, endPoint);
+                        }
+                        else
+                        {
+                            locCurve1 = dictFirstElement[0].Location as LocationCurve;
+                            locCurve2 = dictSecondElement[0].Location as LocationCurve;
+                            XYZ startPoint = Utility.GetXYvalue(locCurve1.Curve.GetEndPoint(0));
+                            XYZ endPoint = Utility.GetXYvalue(locCurve2.Curve.GetEndPoint(1));
+                            connectLine = Line.CreateBound(startPoint, endPoint);
+                        }
+                        if (Math.Round(locCurve1.Curve.GetEndPoint(0).Z, 4) == Math.Round(locCurve1.Curve.GetEndPoint(1).Z, 4) &&
+                         Math.Round(locCurve2.Curve.GetEndPoint(0).Z, 4) != Math.Round(locCurve2.Curve.GetEndPoint(1).Z, 4))
+                        {
+
+                        }
+                        else
+                        {
+                            Dictionary<double, List<Element>> groupPrimary = new Dictionary<double, List<Element>>();
+                            Dictionary<double, List<Element>> groupSecondary = new Dictionary<double, List<Element>>();
+                            groupPrimary.Add(0, CongridDictionary1.First().Value.Select(x => x.Conduit).ToList());
+                            groupSecondary.Add(0, CongridDictionary1.Last().Value.Select(x => x.Conduit).ToList());
+                            //Dictionary<double, List<Element>> groupPrimary = GroupByElementsWithElevation(CongridDictionary1.First().Value.Select(x => x.Conduit).ToList(), offsetVariable);
+                            //Dictionary<double, List<Element>> groupSecondary = GroupByElementsWithElevation(CongridDictionary1.Last().Value.Select(x => x.Conduit).ToList(), offsetVariable);
                             foreach (var elem in groupPrimary)
                             {
                                 foreach (var elem2 in elem.Value)
@@ -143,7 +480,8 @@ namespace AutoUpdaterPro
                             {
                                 for (int i = 0; i < groupPrimary.Count; i++)
                                 {
-
+                                  //  using Transaction trsn = new Transaction(doc);
+                                   // trsn.Start("MultiUpdate");
                                     List<Element> primarySortedElementspre = SortbyPlane(doc, groupPrimary.ElementAt(i).Value);
 
                                     List<Element> secondarySortedElementspre = SortbyPlane(doc, groupSecondary.ElementAt(i).Value);
@@ -183,12 +521,13 @@ namespace AutoUpdaterPro
                                         bool isSamDireLast = Utility.IsSameDirectionWithRoundOff(priLastDir, secFirstDir, 3) || Utility.IsSameDirectionWithRoundOff(priLastDir, secLastDir, 3);
                                         //Same Elevations 
                                         bool isSamDir = !isNotStaright || isSamDireFirst && isSamDireLast;
+                                        Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
+                                        Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
                                         if (!isSamDir)
                                         {
-                                            Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
-                                            Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                           
 
                                             XYZ firstInte = MultiConnectFindIntersectionPoint(priFirst, secFirst);
                                             if (firstInte != null)
@@ -208,13 +547,15 @@ namespace AutoUpdaterPro
                                             successful = false;
                                             return;
                                         }
-                                        else if (isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
+                                        else if ((isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
+                                            || (isSamDir && Math.Round(priFirst.GetEndPoint(0).Z, 3) != Math.Round(priFirst.GetEndPoint(1).Z, 3)))
+                                        // else if (isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
                                         {
 
-                                            Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
-                                            Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                            //Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
+                                            //Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
+                                            //Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
+                                            //Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
                                             ConnectorSet firstConnectors = null;
                                             ConnectorSet secondConnectors = null;
                                             firstConnectors = Utility.GetConnectors(primaryFirst);
@@ -224,6 +565,7 @@ namespace AutoUpdaterPro
                                             XYZ p1 = new XYZ(Math.Round(priFirst.Direction.X, 2), Math.Round(priFirst.Direction.Y, 2), 0);
                                             XYZ p2 = new XYZ(Math.Round(checkline.Direction.X, 2), Math.Round(checkline.Direction.Y, 2), 0);
                                             bool isSamDirecheckline = new XYZ(Math.Abs(p1.X), Math.Abs(p1.Y), 0).IsAlmostEqualTo(new XYZ(Math.Abs(p2.X), Math.Abs(p2.Y), 0));
+
                                             if (isSamDirecheckline)
                                             {
                                                 //Extend
@@ -277,15 +619,18 @@ namespace AutoUpdaterPro
                                             else
                                             {
                                                 //Hoffset //if
+
                                                 HoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
+
+
                                             }
                                         }
                                         else
                                         {
-                                            Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
-                                            Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                            //Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
+                                            //Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
+                                            //Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
+                                            //Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
                                             ConnectorSet firstConnectors = null;
                                             ConnectorSet secondConnectors = null;
                                             firstConnectors = Utility.GetConnectors(primaryFirst);
@@ -381,231 +726,241 @@ namespace AutoUpdaterPro
                                             }
                                         }
                                     }
+                                   // trsn.Commit();
                                 }
                             }
                         }
-                        else if (CongridDictionary1.Count == 1)
+                    }
+                    else if (CongridDictionary1.Count == 1)
+                    {
+                        Utility.GroupByElevation(SelectedElements, offsetVariable, ref group);
+
+
+                        Dictionary<double, List<Element>> groupPrimary = new Dictionary<double, List<Element>>();
+                        Dictionary<double, List<Element>> groupSecondary = new Dictionary<double, List<Element>>();
+                        int k = group.Count / 2;
+                        for (int i = 0; i < group.Count(); i++)
                         {
-                            Utility.GroupByElevation(SelectedElements, offsetVariable, ref group);
-
-
-                            Dictionary<double, List<Element>> groupPrimary = new Dictionary<double, List<Element>>();
-                            Dictionary<double, List<Element>> groupSecondary = new Dictionary<double, List<Element>>();
-                            int k = group.Count / 2;
-                            for (int i = 0; i < group.Count(); i++)
+                            if (i >= k)
                             {
-                                if (i >= k)
+                                groupSecondary.Add(group.ElementAt(i).Key, group.ElementAt(i).Value);
+                            }
+                            else
+                            {
+                                groupPrimary.Add(group.ElementAt(i).Key, group.ElementAt(i).Value);
+                            }
+
+                        }
+
+                        /////////
+                        if (groupPrimary.Count == groupSecondary.Count)
+                        {
+
+                            for (int i = 0; i < groupPrimary.Count; i++)
+                            {
+
+                                List<Element> primarySortedElementspre = SortbyPlane(doc, groupPrimary.ElementAt(i).Value);
+
+                                List<Element> secondarySortedElementspre = SortbyPlane(doc, groupSecondary.ElementAt(i).Value);
+
+
+                                bool isNotStaright = ReverseingConduits(doc, ref primarySortedElementspre, ref secondarySortedElementspre);
+
+                                //defind the primary and secondary sets 
+                                double conduitlengthone = primarySortedElementspre[0].LookupParameter("Length").AsDouble();
+                                double conduitlengthsecond = secondarySortedElementspre[0].LookupParameter("Length").AsDouble();
+                                List<Element> primarySortedElements = new List<Element>();
+                                List<Element> secondarySortedElements = new List<Element>();
+                                if (conduitlengthone < conduitlengthsecond)
                                 {
-                                    groupSecondary.Add(group.ElementAt(i).Key, group.ElementAt(i).Value);
+                                    primarySortedElements = primarySortedElementspre;
+                                    secondarySortedElements = secondarySortedElementspre;
                                 }
                                 else
                                 {
-                                    groupPrimary.Add(group.ElementAt(i).Key, group.ElementAt(i).Value);
+                                    primarySortedElements = secondarySortedElementspre;
+                                    secondarySortedElements = primarySortedElementspre;
                                 }
 
-                            }
-
-                            /////////
-                            if (groupPrimary.Count == groupSecondary.Count)
-                            {
-
-                                for (int i = 0; i < groupPrimary.Count; i++)
+                                if (primarySortedElements.Count == secondarySortedElements.Count)
                                 {
+                                    Element primaryFirst = primarySortedElements.First();
+                                    Element secondaryFirst = secondarySortedElements.First();
+                                    Element primaryLast = primarySortedElements.Last();
+                                    Element secondaryLast = secondarySortedElements.Last();
 
-                                    List<Element> primarySortedElementspre = SortbyPlane(doc, groupPrimary.ElementAt(i).Value);
+                                    XYZ priFirstDir = ((primaryFirst.Location as LocationCurve).Curve as Line).Direction;
+                                    XYZ priLastDir = ((primaryLast.Location as LocationCurve).Curve as Line).Direction;
+                                    XYZ secFirstDir = ((secondaryFirst.Location as LocationCurve).Curve as Line).Direction;
+                                    XYZ secLastDir = ((secondaryLast.Location as LocationCurve).Curve as Line).Direction;
 
-                                    List<Element> secondarySortedElementspre = SortbyPlane(doc, groupSecondary.ElementAt(i).Value);
-
-
-                                    bool isNotStaright = ReverseingConduits(doc, ref primarySortedElementspre, ref secondarySortedElementspre);
-
-                                    //defind the primary and secondary sets 
-                                    double conduitlengthone = primarySortedElementspre[0].LookupParameter("Length").AsDouble();
-                                    double conduitlengthsecond = secondarySortedElementspre[0].LookupParameter("Length").AsDouble();
-                                    List<Element> primarySortedElements = new List<Element>();
-                                    List<Element> secondarySortedElements = new List<Element>();
-                                    if (conduitlengthone < conduitlengthsecond)
+                                    bool isSamDireFirst = Utility.IsSameDirectionWithRoundOff(priFirstDir, secFirstDir, 3) || Utility.IsSameDirectionWithRoundOff(priFirstDir, secLastDir, 3);
+                                    bool isSamDireLast = Utility.IsSameDirectionWithRoundOff(priLastDir, secFirstDir, 3) || Utility.IsSameDirectionWithRoundOff(priLastDir, secLastDir, 3);
+                                    //Same Elevations 
+                                    bool isSamDir = !isNotStaright || isSamDireFirst && isSamDireLast;
+                                    if (!isSamDir)
                                     {
-                                        primarySortedElements = primarySortedElementspre;
-                                        secondarySortedElements = secondarySortedElementspre;
-                                    }
-                                    else
-                                    {
-                                        primarySortedElements = secondarySortedElementspre;
-                                        secondarySortedElements = primarySortedElementspre;
-                                    }
+                                        Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
+                                        Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
 
-                                    if (primarySortedElements.Count == secondarySortedElements.Count)
-                                    {
-                                        Element primaryFirst = primarySortedElements.First();
-                                        Element secondaryFirst = secondarySortedElements.First();
-                                        Element primaryLast = primarySortedElements.Last();
-                                        Element secondaryLast = secondarySortedElements.Last();
-
-                                        XYZ priFirstDir = ((primaryFirst.Location as LocationCurve).Curve as Line).Direction;
-                                        XYZ priLastDir = ((primaryLast.Location as LocationCurve).Curve as Line).Direction;
-                                        XYZ secFirstDir = ((secondaryFirst.Location as LocationCurve).Curve as Line).Direction;
-                                        XYZ secLastDir = ((secondaryLast.Location as LocationCurve).Curve as Line).Direction;
-
-                                        bool isSamDireFirst = Utility.IsSameDirectionWithRoundOff(priFirstDir, secFirstDir, 3) || Utility.IsSameDirectionWithRoundOff(priFirstDir, secLastDir, 3);
-                                        bool isSamDireLast = Utility.IsSameDirectionWithRoundOff(priLastDir, secFirstDir, 3) || Utility.IsSameDirectionWithRoundOff(priLastDir, secLastDir, 3);
-                                        //Same Elevations 
-                                        bool isSamDir = !isNotStaright || isSamDireFirst && isSamDireLast;
-                                        if (!isSamDir)
+                                        XYZ firstInte = MultiConnectFindIntersectionPoint(priFirst, secFirst);
+                                        if (firstInte != null)
                                         {
-                                            Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
-                                            Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                            firstInte = MultiConnectFindIntersectionPoint(priFirst, secLast);
 
-                                            XYZ firstInte = MultiConnectFindIntersectionPoint(priFirst, secFirst);
                                             if (firstInte != null)
                                             {
-                                                firstInte = MultiConnectFindIntersectionPoint(priFirst, secLast);
-
-                                                if (firstInte != null)
-                                                {
-                                                    isSamDir = false;
-                                                }
+                                                isSamDir = false;
                                             }
                                         }
-                                        if (!isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
+                                    }
+                                    if (!isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
+                                    {
+                                        //Multi connect
+                                        System.Windows.MessageBox.Show("Warning. \n" + "Please use Multi Connect tool for the selected group of conduits to connect", "Alert", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                        return;
+                                    }
+                                    else if (isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
+                                    {
+                                        Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
+                                        Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                        ConnectorSet firstConnectors = null;
+                                        ConnectorSet secondConnectors = null;
+                                        firstConnectors = Utility.GetConnectors(primaryFirst);
+                                        secondConnectors = Utility.GetConnectors(secondaryFirst);
+                                        Utility.GetClosestConnectors(firstConnectors, secondConnectors, out Connector ConnectorOne, out Connector ConnectorTwo);
+                                        Line checkline = Line.CreateBound(ConnectorOne.Origin, new XYZ(ConnectorTwo.Origin.X, ConnectorTwo.Origin.Y, ConnectorOne.Origin.Z));
+                                        XYZ p1 = new XYZ(Math.Round(priFirst.Direction.X, 2), Math.Round(priFirst.Direction.Y, 2), 0);
+                                        XYZ p2 = new XYZ(Math.Round(checkline.Direction.X, 2), Math.Round(checkline.Direction.Y, 2), 0);
+                                        bool isSamDirecheckline = new XYZ(Math.Abs(p1.X), Math.Abs(p1.Y), 0).IsAlmostEqualTo(new XYZ(Math.Abs(p2.X), Math.Abs(p2.Y), 0));
+                                        if (isSamDirecheckline)
                                         {
-                                            //Multi connect
-                                            System.Windows.MessageBox.Show("Warning. \n" + "Please use Multi Connect tool for the selected group of conduits to connect", "Alert", MessageBoxButton.OK, MessageBoxImage.Warning);
-                                            return;
-                                        }
-                                        else if (isSamDir && Math.Round(groupPrimary.ElementAt(i).Key, 4) == Math.Round(groupSecondary.ElementAt(i).Key, 4))
-                                        {
-                                            Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
-                                            Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
-                                            ConnectorSet firstConnectors = null;
-                                            ConnectorSet secondConnectors = null;
-                                            firstConnectors = Utility.GetConnectors(primaryFirst);
-                                            secondConnectors = Utility.GetConnectors(secondaryFirst);
-                                            Utility.GetClosestConnectors(firstConnectors, secondConnectors, out Connector ConnectorOne, out Connector ConnectorTwo);
-                                            Line checkline = Line.CreateBound(ConnectorOne.Origin, new XYZ(ConnectorTwo.Origin.X, ConnectorTwo.Origin.Y, ConnectorOne.Origin.Z));
-                                            XYZ p1 = new XYZ(Math.Round(priFirst.Direction.X, 2), Math.Round(priFirst.Direction.Y, 2), 0);
-                                            XYZ p2 = new XYZ(Math.Round(checkline.Direction.X, 2), Math.Round(checkline.Direction.Y, 2), 0);
-                                            bool isSamDirecheckline = new XYZ(Math.Abs(p1.X), Math.Abs(p1.Y), 0).IsAlmostEqualTo(new XYZ(Math.Abs(p2.X), Math.Abs(p2.Y), 0));
-                                            if (isSamDirecheckline)
+                                            //Extend
+                                            XYZ pickpoint = new XYZ();
+                                            if (ChangesInformationForm.instance.MidSaddlePt != null)
                                             {
-                                                //Extend
-                                                XYZ pickpoint = new XYZ();
-                                                if (ChangesInformationForm.instance.MidSaddlePt != null)
+                                                // ElementId midelm= ChangesInformationForm.instance.MidSaddlePt.Owner.Id;
+                                                var CongridDictionary = Utility.GroupByElements(ChangesInformationForm.instance.MidSaddlePt);
+                                                Dictionary<double, List<Element>> grPrimary = Utility.GroupByElementsWithElevation(CongridDictionary.First().Value.Select(x => x.Conduit).ToList(), offsetVariable);
+                                                Dictionary<double, List<Element>> grSecondary = Utility.GroupByElementsWithElevation(CongridDictionary.Last().Value.Select(x => x.Conduit).ToList(), offsetVariable);
+                                                if (grPrimary.Count == grSecondary.Count)
                                                 {
-                                                    // ElementId midelm= ChangesInformationForm.instance.MidSaddlePt.Owner.Id;
-                                                    var CongridDictionary = Utility.GroupByElements(ChangesInformationForm.instance.MidSaddlePt);
-                                                    Dictionary<double, List<Element>> grPrimary = Utility.GroupByElementsWithElevation(CongridDictionary.First().Value.Select(x => x.Conduit).ToList(), offsetVariable);
-                                                    Dictionary<double, List<Element>> grSecondary = Utility.GroupByElementsWithElevation(CongridDictionary.Last().Value.Select(x => x.Conduit).ToList(), offsetVariable);
-                                                    if (grPrimary.Count == grSecondary.Count)
+                                                    for (int j = 0; j < grPrimary.Count; j++)
                                                     {
-                                                        for (int j = 0; j < grPrimary.Count; j++)
+
+                                                        List<Element> primarySortedElem = SortbyPlane(doc, grPrimary.ElementAt(j).Value);
+
+                                                        List<Element> secondarySortedElem = SortbyPlane(doc, grSecondary.ElementAt(j).Value);
+                                                        ConnectorSet connectorSetOne = Utility.GetConnectors(primarySortedElem.FirstOrDefault());
+                                                        ConnectorSet connectorSetTwo = Utility.GetConnectors(secondarySortedElem.FirstOrDefault());
+                                                        foreach (Connector connector in connectorSetOne)
                                                         {
-
-                                                            List<Element> primarySortedElem = SortbyPlane(doc, grPrimary.ElementAt(j).Value);
-
-                                                            List<Element> secondarySortedElem = SortbyPlane(doc, grSecondary.ElementAt(j).Value);
-                                                            ConnectorSet connectorSetOne = Utility.GetConnectors(primarySortedElem.FirstOrDefault());
-                                                            ConnectorSet connectorSetTwo = Utility.GetConnectors(secondarySortedElem.FirstOrDefault());
-                                                            foreach (Connector connector in connectorSetOne)
+                                                            foreach (Connector connector2 in connectorSetTwo)
                                                             {
-                                                                foreach (Connector connector2 in connectorSetTwo)
+                                                                ConnectorSet cs = connector.AllRefs;
+                                                                ConnectorSet cs2 = connector2.AllRefs;
+                                                                foreach (Connector c in cs)
                                                                 {
-                                                                    ConnectorSet cs = connector.AllRefs;
-                                                                    ConnectorSet cs2 = connector2.AllRefs;
-                                                                    foreach (Connector c in cs)
+                                                                    foreach (Connector c2 in cs2)
                                                                     {
-                                                                        foreach (Connector c2 in cs2)
+                                                                        if (c.Owner.Id == c2.Owner.Id)
                                                                         {
-                                                                            if (c.Owner.Id == c2.Owner.Id)
-                                                                            {
-                                                                                //List<XYZ> StEn = Utility.GetFittingStartAndEndPoint(doc.GetElement(c.Owner.Id) as FamilyInstance);
-                                                                                // Line li = Line.CreateBound(StEn[0], StEn[1]);
-                                                                                //XYZ m = Utility.GetMidPoint(li);
-                                                                                // XYZ cross = li.Direction.CrossProduct(XYZ.BasisZ);
-                                                                                // XYZ newStart = m + cross.Multiply(1);
-                                                                                // XYZ newEnd = m - cross.Multiply(1);
-                                                                                // Line verticalLine = Line.CreateBound(newStart, newEnd);
-                                                                                // XYZ interSectionPoint = Utility.FindIntersectionPoint(verticalLine,li);
-                                                                                // MessageBox.Show(interSectionPoint.ToString());
-                                                                                XYZ ElbowLocationPoint = (doc.GetElement(c.Owner.Id).Location as LocationPoint).Point;
-                                                                                pickpoint = ElbowLocationPoint;//new XYZ(c.Origin.X, c.Origin.Y, 0);
-                                                                                break;
-                                                                            }
+                                                                            //List<XYZ> StEn = Utility.GetFittingStartAndEndPoint(doc.GetElement(c.Owner.Id) as FamilyInstance);
+                                                                            // Line li = Line.CreateBound(StEn[0], StEn[1]);
+                                                                            //XYZ m = Utility.GetMidPoint(li);
+                                                                            // XYZ cross = li.Direction.CrossProduct(XYZ.BasisZ);
+                                                                            // XYZ newStart = m + cross.Multiply(1);
+                                                                            // XYZ newEnd = m - cross.Multiply(1);
+                                                                            // Line verticalLine = Line.CreateBound(newStart, newEnd);
+                                                                            // XYZ interSectionPoint = Utility.FindIntersectionPoint(verticalLine,li);
+                                                                            // MessageBox.Show(interSectionPoint.ToString());
+                                                                            XYZ ElbowLocationPoint = (doc.GetElement(c.Owner.Id).Location as LocationPoint).Point;
+                                                                            pickpoint = ElbowLocationPoint;//new XYZ(c.Origin.X, c.Origin.Y, 0);
+                                                                            break;
                                                                         }
                                                                     }
                                                                 }
                                                             }
-
-
                                                         }
+
+
                                                     }
-
-
                                                 }
-                                                else
-                                                {
-                                                    pickpoint = Utility.PickPoint(uidoc);
-                                                }
-                                                if (pickpoint != null)
-                                                    ThreePtSaddleExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, pickpoint);
+
 
                                             }
                                             else
                                             {
-                                                //Hoffset //else if
-                                                HoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
+                                                pickpoint = Utility.PickPoint(uidoc);
                                             }
+                                            if (pickpoint != null)
+                                                ThreePtSaddleExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, pickpoint);
+
                                         }
                                         else
                                         {
-                                            Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
-                                            Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
-                                            Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
-                                            ConnectorSet firstConnectors = null;
-                                            ConnectorSet secondConnectors = null;
-                                            firstConnectors = Utility.GetConnectors(primaryFirst);
-                                            secondConnectors = Utility.GetConnectors(secondaryFirst);
-                                            Utility.GetClosestConnectors(firstConnectors, secondConnectors, out Connector ConnectorOne, out Connector ConnectorTwo);
-                                            Line checkline = Line.CreateBound(ConnectorOne.Origin, new XYZ(ConnectorTwo.Origin.X, ConnectorTwo.Origin.Y, ConnectorOne.Origin.Z));
-                                            XYZ p1 = new XYZ(Math.Round(priFirst.Direction.X, 2), Math.Round(priFirst.Direction.Y, 2), 0);
-                                            XYZ p2 = new XYZ(Math.Round(checkline.Direction.X, 2), Math.Round(checkline.Direction.Y, 2), 0);
-                                            bool isSamDirecheckline = new XYZ(Math.Abs(p1.X), Math.Abs(p1.Y), 0).IsAlmostEqualTo(new XYZ(Math.Abs(p2.X), Math.Abs(p2.Y), 0));
+                                            //Hoffset //else if
+                                            HoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
+                                        Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
+                                        Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                        ConnectorSet firstConnectors = null;
+                                        ConnectorSet secondConnectors = null;
+                                        firstConnectors = Utility.GetConnectors(primaryFirst);
+                                        secondConnectors = Utility.GetConnectors(secondaryFirst);
+                                        Utility.GetClosestConnectors(firstConnectors, secondConnectors, out Connector ConnectorOne, out Connector ConnectorTwo);
+                                        Line checkline = Line.CreateBound(ConnectorOne.Origin, new XYZ(ConnectorTwo.Origin.X, ConnectorTwo.Origin.Y, ConnectorOne.Origin.Z));
+                                        XYZ p1 = new XYZ(Math.Round(priFirst.Direction.X, 2), Math.Round(priFirst.Direction.Y, 2), 0);
+                                        XYZ p2 = new XYZ(Math.Round(checkline.Direction.X, 2), Math.Round(checkline.Direction.Y, 2), 0);
+                                        bool isSamDirecheckline = new XYZ(Math.Abs(p1.X), Math.Abs(p1.Y), 0).IsAlmostEqualTo(new XYZ(Math.Abs(p2.X), Math.Abs(p2.Y), 0));
 
-                                            double priSlope = -Math.Round(priFirst.Direction.X, 6) / Math.Round(priFirst.Direction.Y, 6);
-                                            double SecSlope = -Math.Round(secFirst.Direction.X, 6) / Math.Round(secFirst.Direction.Y, 6);
+                                        double priSlope = -Math.Round(priFirst.Direction.X, 6) / Math.Round(priFirst.Direction.Y, 6);
+                                        double SecSlope = -Math.Round(secFirst.Direction.X, 6) / Math.Round(secFirst.Direction.Y, 6);
 
-                                            if ((priSlope == -1 && SecSlope == 0) || Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4) == -1 || Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4).ToString() == double.NaN.ToString())
-                                            {
-                                                //kick
+                                        if ((priSlope == -1 && SecSlope == 0) || Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4) == -1 || Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4).ToString() == double.NaN.ToString())
+                                        {
+                                            //kick
 
-                                                KickExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, i);
-                                            }
-                                            else if (isSamDirecheckline)
+                                            KickExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, i);
+                                        }
+                                        else if (isSamDirecheckline)
+                                        {
+                                            //Voffset
+                                            VoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
+                                        }
+                                        else
+                                        {
+                                            //Roffset
+                                            try
                                             {
-                                                //Voffset
-                                                VoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
-                                            }
-                                            else
-                                            {
-                                                //Roffset
-                                                try
+                                                using (SubTransaction trx = new SubTransaction(doc))
                                                 {
-                                                    using (SubTransaction trx = new SubTransaction(doc))
+                                                    trx.Start();
+                                                    List<ElementId> unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Left-Down");
+                                                    if (unwantedids.Count > 0)
                                                     {
-                                                        trx.Start();
-                                                        List<ElementId> unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Left-Down");
+                                                        foreach (ElementId id in unwantedids)
+                                                        {
+                                                            doc.Delete(id);
+                                                        }
+                                                        unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Right-Down");
+
                                                         if (unwantedids.Count > 0)
                                                         {
                                                             foreach (ElementId id in unwantedids)
                                                             {
                                                                 doc.Delete(id);
                                                             }
-                                                            unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Right-Down");
+                                                            unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Left-Up");
 
                                                             if (unwantedids.Count > 0)
                                                             {
@@ -613,7 +968,7 @@ namespace AutoUpdaterPro
                                                                 {
                                                                     doc.Delete(id);
                                                                 }
-                                                                unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Left-Up");
+                                                                unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Bottom-Left");
 
                                                                 if (unwantedids.Count > 0)
                                                                 {
@@ -621,55 +976,45 @@ namespace AutoUpdaterPro
                                                                     {
                                                                         doc.Delete(id);
                                                                     }
-                                                                    unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Bottom-Left");
+                                                                    unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Top-Right");
 
-                                                                    if (unwantedids.Count > 0)
+                                                                    foreach (ElementId id in unwantedids)
                                                                     {
-                                                                        foreach (ElementId id in unwantedids)
-                                                                        {
-                                                                            doc.Delete(id);
-                                                                        }
-                                                                        unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Top-Right");
-
-                                                                        foreach (ElementId id in unwantedids)
-                                                                        {
-                                                                            doc.Delete(id);
-                                                                        }
+                                                                        doc.Delete(id);
                                                                     }
-
                                                                 }
+
                                                             }
                                                         }
-                                                        trx.Commit();
-                                                        unusedfittings = unusedfittings.Where(x => (x as FamilyInstance).MEPModel.ConnectorManager.UnusedConnectors.Size == 2).ToList();
-                                                        doc.Delete(unusedfittings.Select(r => r.Id).ToList());
                                                     }
-                                                    using (SubTransaction txs = new SubTransaction(doc))
-                                                    {
-                                                        txs.Start();
-                                                        Utility.ApplySync(primarySortedElements, _uiapp);
-                                                        txs.Commit();
-                                                    }
+                                                    trx.Commit();
+                                                    unusedfittings = unusedfittings.Where(x => (x as FamilyInstance).MEPModel.ConnectorManager.UnusedConnectors.Size == 2).ToList();
+                                                    doc.Delete(unusedfittings.Select(r => r.Id).ToList());
                                                 }
-                                                catch
+                                                using (SubTransaction txs = new SubTransaction(doc))
                                                 {
-
+                                                    txs.Start();
+                                                    Utility.ApplySync(primarySortedElements, _uiapp);
+                                                    txs.Commit();
                                                 }
+                                            }
+                                            catch
+                                            {
+
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                        else
-                        {
+                    }
+                    else
+                    {
 
-                            //  trns.RollBack();
-
-                        }
-                        tx.Commit();
+                        //  trns.RollBack();
 
                     }
+
                 }
                 SelectedElements.Clear();
                 uidoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
@@ -683,6 +1028,9 @@ namespace AutoUpdaterPro
             {
             }
         }
+
+
+
         #region connectors
         public void HoffsetExecute(UIApplication uiapp, ref List<Element> PrimaryElements, ref List<Element> SecondaryElements)
         {
@@ -917,6 +1265,603 @@ namespace AutoUpdaterPro
             }
 
 
+        }
+        private static bool HasDuplicateYCoordinates(List<XYZ> points)
+        {
+            HashSet<double> uniqueYCoordinates = new HashSet<double>();
+
+            foreach (var point in points)
+            {
+                if (!uniqueYCoordinates.Add(point.Y))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public static Dictionary<int, List<ConduitGrid>> GroupStubElements(List<Autodesk.Revit.DB.Element> ElementCollection, double maximumSpacing = 0.5)
+        {
+            List<ConduitGrid> list = new List<ConduitGrid>();
+            List<Autodesk.Revit.DB.Element> list2 = new List<Autodesk.Revit.DB.Element>();
+            foreach (Autodesk.Revit.DB.Element item2 in ElementCollection)
+            {
+                Line line = (item2.Location as LocationCurve).Curve as Line;
+                XYZ DirectionOne = line.Direction;
+                if (!list2.Any((Autodesk.Revit.DB.Element r) => Utility.IsSameDirection(((r.Location as LocationCurve).Curve as Line).Direction, DirectionOne)))
+                {
+                    list2.Add(item2);
+                }
+            }
+
+            foreach (Autodesk.Revit.DB.Element item3 in list2)
+            {
+                Line line2 = (item3.Location as LocationCurve).Curve as Line;
+                XYZ direction = line2.Direction;
+                foreach (Autodesk.Revit.DB.Element item4 in ElementCollection)
+                {
+                    Line line3 = (item4.Location as LocationCurve).Curve as Line;
+                    XYZ direction2 = line3.Direction;
+                    if (!Utility.IsSameDirection(direction, direction2))
+                    {
+                        continue;
+                    }
+
+                    XYZ endPoint = line2.GetEndPoint(0);
+                    XYZ endPoint2 = line2.GetEndPoint(1);
+
+                    Line line4 = null;
+                    XYZ xYZ = (endPoint + endPoint2) / 2.0;
+                    XYZ xYZ2 = line2.Direction.CrossProduct(XYZ.BasisZ);
+                    XYZ endpoint = xYZ + xYZ2.Multiply(100.0);
+                    XYZ endpoint2 = xYZ - xYZ2.Multiply(100.0);
+                    try
+                    {
+                        line4 = Line.CreateBound(endpoint, endpoint2);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine(ex.Message);
+                    }
+                    try
+                    {
+                        XYZ xYZ3 = null;
+                        try
+                        {
+                            xYZ3 = Utility.FindIntersection(item4, line4);
+                        }
+                        catch
+                        {
+
+                        }
+                        if (xYZ3 != null)
+                        {
+                            ConduitGrid item = new ConduitGrid(item4, item3, xYZ3.DistanceTo(new XYZ(xYZ.X, xYZ.Y, 0.0)));
+                            list.Add(item);
+                        }
+                        else
+                        {
+                            endPoint = line2.GetEndPoint(0);
+                            endPoint2 = line3.GetEndPoint(0);
+                            ConduitGrid item = new ConduitGrid(item4, item3, new XYZ(endPoint.X, endPoint.Y, 0).DistanceTo(new XYZ(endPoint2.X, endPoint2.Y, 0)));
+                            list.Add(item);
+                        }
+                    }
+                    catch (Exception ex2)
+                    {
+                        Console.WriteLine(ex2.Message);
+                    }
+                }
+            }
+
+            Dictionary<int, List<ConduitGrid>> CongridDictionary = new Dictionary<int, List<ConduitGrid>>();
+            List<Autodesk.Revit.DB.Element> list3 = new List<Autodesk.Revit.DB.Element>();
+            int index = 0;
+            foreach (IGrouping<Autodesk.Revit.DB.ElementId, ConduitGrid> item5 in from r in list
+                                                                                  group r by r.RefConduit.Id)
+            {
+                foreach (ConduitGrid congrid in item5.OrderBy((ConduitGrid x) => x.Distance))
+                {
+                    if (list3.Any((Autodesk.Revit.DB.Element r) => r.Id == congrid.Conduit.Id))
+                    {
+                        continue;
+                    }
+
+                    List<ConduitGrid> source = list.Where((ConduitGrid r) => r.RefConduit.Id == congrid.RefConduit.Id && !CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> x) => x.Value.Any((ConduitGrid y) => y.Conduit.Id == r.Conduit.Id))).ToList();
+                    List<ConduitGrid> IntersectingConduits = source.Where((ConduitGrid r) => GetIntersection(r.Conduit, congrid, congrid.StartPoint, maximumSpacing) != null).ToList();
+                    IntersectingConduits.AddRange(source.Where((ConduitGrid r) => !IntersectingConduits.Any((ConduitGrid x) => r.Conduit.Id == x.Conduit.Id) && GetIntersection(r.Conduit, congrid, congrid.EndPoint, maximumSpacing) != null).ToList());
+                    IntersectingConduits.AddRange(source.Where((ConduitGrid r) => !IntersectingConduits.Any((ConduitGrid x) => r.Conduit.Id == x.Conduit.Id) && GetIntersection(r.Conduit, congrid, congrid.MidPoint, maximumSpacing) != null).ToList());
+                    if (IntersectingConduits == null || !IntersectingConduits.Any())
+                    {
+                        continue;
+                    }
+
+                    if (!CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => IntersectingConduits.Any((ConduitGrid y) => y.Conduit.Id == x.Conduit.Id))))
+                    {
+                        foreach (ConduitGrid cg in IntersectingConduits)
+                        {
+                            source = list.Where((ConduitGrid r) => r.RefConduit.Id == cg.RefConduit.Id).ToList();
+                            List<ConduitGrid> ISC = source.Where((ConduitGrid r) => GetIntersection(r.Conduit, cg, cg.StartPoint, maximumSpacing) != null).ToList();
+                            ISC.AddRange(source.Where((ConduitGrid r) => !ISC.Any((ConduitGrid x) => r.Conduit.Id == x.Conduit.Id) && GetIntersection(r.Conduit, cg, cg.EndPoint, maximumSpacing) != null).ToList());
+                            ISC.AddRange(source.Where((ConduitGrid r) => !ISC.Any((ConduitGrid x) => r.Conduit.Id == x.Conduit.Id) && GetIntersection(r.Conduit, cg, cg.MidPoint, maximumSpacing) != null).ToList());
+                            if (ISC == null)
+                            {
+                                continue;
+                            }
+
+                            if (!CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => ISC.Any((ConduitGrid y) => y.Conduit.Id == x.Conduit.Id))))
+                            {
+                                ISC = ISC.Where((ConduitGrid x) => !CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid y) => x.Conduit.Id == y.Conduit.Id))).ToList();
+                                if (!CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Key == index))
+                                {
+                                    CongridDictionary.Add(index, ISC);
+                                }
+
+                                continue;
+                            }
+
+                            KeyValuePair<int, List<ConduitGrid>> keyValuePair = CongridDictionary.FirstOrDefault((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => ISC.Any((ConduitGrid y) => y.Conduit.Id == x.Conduit.Id)));
+                            List<ConduitGrid> value = keyValuePair.Value;
+                            if (value == null)
+                            {
+                                continue;
+                            }
+
+                            foreach (ConduitGrid conGrid3 in ISC)
+                            {
+                                if (!value.Any((ConduitGrid r) => r.Conduit.Id == conGrid3.Conduit.Id && r.RefConduit.Id == conGrid3.RefConduit.Id) && !CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => x.Conduit.Id == conGrid3.Conduit.Id)))
+                                {
+                                    value.Add(conGrid3);
+                                }
+                            }
+
+                            CongridDictionary[keyValuePair.Key] = value;
+                        }
+
+                        if (!CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => IntersectingConduits.Any((ConduitGrid x) => r.Value.Any((ConduitGrid y) => x.Conduit.Id == y.Conduit.Id))))
+                        {
+                            IntersectingConduits = IntersectingConduits.Where((ConduitGrid x) => !CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid y) => x.Conduit.Id == y.Conduit.Id))).ToList();
+                            if (!CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Key == index))
+                            {
+                                if (!CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => IntersectingConduits.Any((ConduitGrid x) => r.Value.Any((ConduitGrid y) => x.Conduit.Id == y.RefConduit.Id || x.RefConduit.Id == y.Conduit.Id))))
+                                {
+                                    CongridDictionary.Add(index, IntersectingConduits);
+                                }
+                                else
+                                {
+                                    KeyValuePair<int, List<ConduitGrid>> keyValuePair2 = CongridDictionary.FirstOrDefault((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => IntersectingConduits.Any((ConduitGrid y) => y.RefConduit.Id == x.Conduit.Id)));
+                                    List<ConduitGrid> value2 = keyValuePair2.Value;
+                                    if (value2 != null)
+                                    {
+                                        foreach (ConduitGrid conGrid2 in IntersectingConduits)
+                                        {
+                                            if (!value2.Any((ConduitGrid r) => r.Conduit.Id == conGrid2.Conduit.Id && r.RefConduit.Id == conGrid2.RefConduit.Id) && !CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => x.Conduit.Id == conGrid2.Conduit.Id)))
+                                            {
+                                                value2.Add(conGrid2);
+                                            }
+                                        }
+
+                                        CongridDictionary[keyValuePair2.Key] = value2;
+                                    }
+                                }
+                            }
+                        }
+
+                        int num = index;
+                        index = num + 1;
+                    }
+                    else
+                    {
+                        KeyValuePair<int, List<ConduitGrid>> keyValuePair3 = CongridDictionary.FirstOrDefault((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => IntersectingConduits.Any((ConduitGrid y) => y.Conduit.Id == x.Conduit.Id)));
+                        List<ConduitGrid> value3 = keyValuePair3.Value;
+                        if (value3 != null)
+                        {
+                            foreach (ConduitGrid conGrid in IntersectingConduits)
+                            {
+                                if (!value3.Any((ConduitGrid r) => r.Conduit.Id == conGrid.Conduit.Id && r.RefConduit.Id == conGrid.RefConduit.Id) && !CongridDictionary.Any((KeyValuePair<int, List<ConduitGrid>> r) => r.Value.Any((ConduitGrid x) => x.Conduit.Id == conGrid.Conduit.Id)))
+                                {
+                                    value3.Add(conGrid);
+                                }
+                            }
+
+                            CongridDictionary[keyValuePair3.Key] = value3;
+                        }
+                    }
+
+                    list3.Add(congrid.Conduit);
+                }
+            }
+            return CongridDictionary;
+        }
+        public static XYZ GetIntersection(Autodesk.Revit.DB.Element element, ConduitGrid conGrid, XYZ Point, double maximumSpacing = 1.0)
+        {
+            try
+            {
+                double num = ((element.GetType() == typeof(Autodesk.Revit.DB.Electrical.Conduit)) ? element.LookupParameter("Outside Diameter").AsDouble() : element.LookupParameter("Width").AsDouble());
+                double num2 = ((conGrid.Conduit.GetType() == typeof(Autodesk.Revit.DB.Electrical.Conduit)) ? conGrid.Conduit.LookupParameter("Outside Diameter").AsDouble() : conGrid.Conduit.LookupParameter("Width").AsDouble());
+                double num3 = num / 2.0;
+                double num4 = num2 / 2.0;
+                double value = num3 + num4 + maximumSpacing;
+                XYZ direction = conGrid.ConduitLine.Direction;
+                XYZ xYZ = direction.CrossProduct(XYZ.BasisZ);
+                XYZ endpoint = Point + xYZ.Multiply(value);
+                XYZ endpoint2 = Point - xYZ.Multiply(value);
+                Line line = Line.CreateBound(endpoint, endpoint2);
+                Line line2 = (element.Location as LocationCurve).Curve as Line;
+                XYZ endPoint = line2.GetEndPoint(0);
+                XYZ endPoint2 = line2.GetEndPoint(1);
+                endPoint = new XYZ(endPoint.X, endPoint.Y, 0.0);
+                endPoint2 = new XYZ(endPoint2.X, endPoint2.Y, 0.0);
+                Line line3 = Line.CreateBound(endPoint, endPoint2);
+                return GetIntersection(line3, line);
+            }
+            catch
+            {
+                Line lineOne = (element.Location as LocationCurve).Curve as Line;
+                Line lineTwo = (conGrid.Conduit.Location as LocationCurve).Curve as Line;
+                XYZ endPointOne = lineOne.GetEndPoint(0);
+                XYZ endPointTwo = lineTwo.GetEndPoint(0);
+                double num = ((element.GetType() == typeof(Autodesk.Revit.DB.Electrical.Conduit)) ? element.LookupParameter("Outside Diameter").AsDouble() : element.LookupParameter("Width").AsDouble());
+                double num2 = ((conGrid.Conduit.GetType() == typeof(Autodesk.Revit.DB.Electrical.Conduit)) ? conGrid.Conduit.LookupParameter("Outside Diameter").AsDouble() : conGrid.Conduit.LookupParameter("Width").AsDouble());
+                double num3 = num / 2.0;
+                double num4 = num2 / 2.0;
+                double value = num3 + num4 + maximumSpacing;
+                double distance = new XYZ(endPointOne.X, endPointOne.Y, 0).DistanceTo(new XYZ(endPointTwo.X, endPointTwo.Y, 0));
+                if (distance <= value)
+                {
+                    return endPointTwo;
+                }
+                return null;
+            }
+
+            return null;
+        }
+        public static List<Element> FindCornerConduitsStub(Dictionary<XYZ, Element> multilayerdPS, List<XYZ> xyzPS, Document doc, bool isangledVerticalConduits, List<Element> primaryelementCount)
+        {
+            List<Element> GroupedElement = new List<Element>();
+            using (SubTransaction trans = new SubTransaction(doc))
+            {
+                trans.Start();
+                double maxDistance = 0;
+                XYZ firstCorner = null;
+                XYZ secondCorner = null;
+                for (int a = 0; a < xyzPS.Count; a++)
+                {
+                    for (int j = a + 1; j < xyzPS.Count; j++)
+                    {
+                        double distance = xyzPS[a].DistanceTo(xyzPS[j]);
+                        if (distance > maxDistance)
+                        {
+                            maxDistance = distance;
+                            firstCorner = xyzPS[a];
+                            secondCorner = xyzPS[j];
+                        }
+                    }
+                }
+                List<XYZ> remainingPoints = xyzPS.Where(p => p != firstCorner && p != secondCorner).ToList();
+                List<XYZ> otherCorners = remainingPoints.OrderByDescending(p => DistanceToLine(firstCorner, secondCorner, p)).Take(2).ToList();
+                List<XYZ> cornerPoints = new List<XYZ> { firstCorner, secondCorner };
+                Line PCl1 = null;
+                Line PCl2 = null;
+                Line PCl3 = null;
+                Dictionary<double, List<XYZ>> linesWithLengths = new Dictionary<double, List<XYZ>>();
+
+                if ((Math.Round(cornerPoints[0].X, 4) != Math.Round(cornerPoints[1].X, 4)))
+                {
+                    if (primaryelementCount.Count != multilayerdPS.Count)
+                    {
+                        cornerPoints.AddRange(otherCorners);
+                        List<XYZ> cornerPointsBackup = cornerPoints;
+
+                        double commonZ = xyzPS[0].Z;
+                        double minX = xyzPS.Min(p => p.X);
+                        double minY = xyzPS.Min(p => p.Y);
+                        double maxX = xyzPS.Max(p => p.X);
+                        double maxY = xyzPS.Max(p => p.Y);
+                        XYZ topLeft = new XYZ(minX, maxY, commonZ);      // (minX, maxY)
+                        XYZ topRight = new XYZ(maxX, maxY, commonZ);     // (maxX, maxY)
+                        XYZ bottomLeft = new XYZ(minX, minY, commonZ);   // (minX, minY)
+                        XYZ bottomRight = new XYZ(maxX, minY, commonZ);  // (maxX, minY)
+                        List<XYZ> _cornerPoints = new List<XYZ> { topLeft, topRight, bottomLeft, bottomRight };
+                        if (_previousXYZ != null)
+                        {
+                            XYZ[] cp = cornerPoints.ToArray();
+                            XYZ minDistanceCorner = FindMinimumDistance(_previousXYZ, cp);
+                            cornerPoints = new List<XYZ> { minDistanceCorner };
+                            cornerPoints.AddRange(cornerPointsBackup.Except(cornerPoints));
+                        }
+                        PCl1 = Line.CreateBound(new XYZ(cornerPoints[0].X, cornerPoints[0].Y, 0),
+                     new XYZ(cornerPoints[1].X, cornerPoints[1].Y, 0));
+                        PCl2 = Line.CreateBound(new XYZ(cornerPoints[0].X, cornerPoints[0].Y, 0),
+                         new XYZ(cornerPoints[2].X, cornerPoints[2].Y, 0));
+                        PCl3 = Line.CreateBound(new XYZ(cornerPoints[0].X, cornerPoints[0].Y, 0),
+                         new XYZ(cornerPoints[3].X, cornerPoints[3].Y, 0));
+                        linesWithLengths = new Dictionary<double, List<XYZ>>
+                                                       {
+                                                           {PCl1.Length,new List< XYZ>() {cornerPoints[0], cornerPoints[1] } },
+                                                           {PCl2.Length,new List< XYZ>() { cornerPoints[0], cornerPoints[2] }  },
+                                                           {PCl3.Length,new List< XYZ>() { cornerPoints[0], cornerPoints[3] }  }
+                                                       };
+                        linesWithLengths = linesWithLengths.OrderBy(x => x.Key).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                        //2x2 matrix element take short line only
+                        if (xyzPS.Count > 4)
+                        {
+                            linesWithLengths.Remove(linesWithLengths.Keys.FirstOrDefault());
+                            linesWithLengths.Remove(linesWithLengths.Keys.LastOrDefault());
+                        }
+                        else
+                        {
+                            var firstEntry = linesWithLengths.GetEnumerator();
+                            firstEntry.MoveNext();
+                            var firstKey = firstEntry.Current.Key;
+                            var firstValue = firstEntry.Current.Value;
+                            linesWithLengths.Clear();
+                            linesWithLengths.Add(firstKey, firstValue);
+
+                        }
+                    }
+                    else
+                    {
+                        PCl1 = Line.CreateBound(new XYZ(cornerPoints[0].X, cornerPoints[0].Y, 0),
+                     new XYZ(cornerPoints[1].X, cornerPoints[1].Y, 0));
+                        linesWithLengths = new Dictionary<double, List<XYZ>> { { PCl1.Length, new List<XYZ>() { cornerPoints[0], cornerPoints[1] } } };
+                    }
+                }
+                else
+                {
+                    PCl1 = Line.CreateBound(new XYZ(cornerPoints[0].X, cornerPoints[0].Y, 0),
+                 new XYZ(cornerPoints[1].X, cornerPoints[1].Y, 0));
+                    linesWithLengths = new Dictionary<double, List<XYZ>> { { PCl1.Length, new List<XYZ>() { cornerPoints[0], cornerPoints[1] } } };
+                }
+
+                List<XYZ> XYZPoints = linesWithLengths.Select(x => x.Value).ToList().FirstOrDefault();
+                List<Element> matchingElements = multilayerdPS
+                                                 .Where(kvp => XYZPoints.Contains(kvp.Key))
+                                                 .Select(kvp => kvp.Value)
+                                                 .ToList();
+                if (isangledVerticalConduits)
+                {
+                    XYZ midPoint1 = (((matchingElements[0].Location as LocationCurve).Curve).GetEndPoint(0) +
+                ((matchingElements[0].Location as LocationCurve).Curve).GetEndPoint(1)) / 2;
+                    XYZ midPoint2 = (((matchingElements[1].Location as LocationCurve).Curve).GetEndPoint(0) +
+                       ((matchingElements[1].Location as LocationCurve).Curve).GetEndPoint(1)) / 2;
+                    List<XYZ> midXYZs = new List<XYZ>() { midPoint1, midPoint2 };
+                    double outsideDiameter1 = matchingElements[0].get_Parameter(BuiltInParameter.RBS_CONDUIT_OUTER_DIAM_PARAM).AsDouble();
+                    double outsideDiameter2 = matchingElements[1].get_Parameter(BuiltInParameter.RBS_CONDUIT_OUTER_DIAM_PARAM).AsDouble();
+                    Line connectedLine = Line.CreateBound(midXYZs[0], midXYZs[1]);
+                    XYZ direction = connectedLine.Direction;
+                    XYZ newXYZ1 = midXYZs[0] - direction * (outsideDiameter1 / 2);
+                    XYZ newXYZ2 = midXYZs[1] + direction * (outsideDiameter2 / 2);
+                    Line centerLine = Line.CreateBound(newXYZ1, newXYZ2);
+                    otherConduit = Utility.CreateConduit(doc, matchingElements[0], centerLine);
+                    Element midPointConduit = null;
+                    List<Element> collector = multilayerdPS.Select(x => x.Value).ToList();
+                    List<Element> conduitsBetween = new List<Element>();
+                    conduitsBetween.Add(matchingElements[0]);
+                    foreach (Element conduit in collector)
+                    {
+                        LocationCurve conduitCurve = conduit.Location as LocationCurve;
+                        if (conduitCurve == null) continue;
+                        if (conduit.Id == otherConduit.Id) continue;
+                        LocationCurve otherConduitCurve = otherConduit.Location as LocationCurve;
+                        if (conduit.Id != matchingElements[0].Id && conduit.Id != matchingElements[1].Id)
+                        {
+                            SetComparisonResult result = conduitCurve.Curve.Intersect(otherConduitCurve.Curve, out IntersectionResultArray intersectionResultArray);
+                            if (result == SetComparisonResult.Overlap)
+                            {
+                                if (!conduitsBetween.Contains(otherConduit))
+                                {
+                                    conduitsBetween.Add(conduit);
+                                }
+                                if (midPointConduit == null || midPointConduit.Id != conduit.Id)
+                                {
+                                    midPointConduit = conduit;
+                                }
+                            }
+                        }
+                    }
+                    conduitsBetween.Add(matchingElements[1]);
+                    GroupedElement = conduitsBetween;
+                    if (otherConduit != null)
+                    {
+                        doc.Delete(otherConduit.Id);
+                    }
+                }
+                else
+                {
+                    List<XYZ> orderedPoints = CreateBoundingBoxLineKick(linesWithLengths, matchingElements, multilayerdPS, doc);
+                    GroupedElement = multilayerdPS
+                                                  .Where(kvp => orderedPoints.Contains(kvp.Key))
+                                                  .Select(kvp => kvp.Value)
+                                                  .ToList();
+                    _previousXYZ = cornerPoints[0];
+                }
+                trans.Commit();
+            }
+            return GroupedElement;
+        }
+        public static List<XYZ> CreateBoundingBoxLineKick(Dictionary<double, List<XYZ>> ConduitconnectedLine, List<Element> twoConduits,
+          Dictionary<XYZ, Element> multilayerdPS, Document doc)
+        {
+            List<XYZ> orderedPoints = new List<XYZ>();
+
+            XYZ midPoint1 = (((twoConduits[0].Location as LocationCurve).Curve).GetEndPoint(0) +
+                ((twoConduits[0].Location as LocationCurve).Curve).GetEndPoint(1)) / 2;
+            XYZ midPoint2 = (((twoConduits[1].Location as LocationCurve).Curve).GetEndPoint(0) +
+               ((twoConduits[1].Location as LocationCurve).Curve).GetEndPoint(1)) / 2;
+            midPoint2 = new XYZ(midPoint2.X, midPoint2.Y, midPoint1.Z);
+            List<XYZ> midXYZs = new List<XYZ>() { midPoint1, midPoint2 };
+
+
+            double outsideDiameter1 = twoConduits[0].get_Parameter(BuiltInParameter.RBS_CONDUIT_OUTER_DIAM_PARAM).AsDouble();
+            double outsideDiameter2 = twoConduits[1].get_Parameter(BuiltInParameter.RBS_CONDUIT_OUTER_DIAM_PARAM).AsDouble();
+            List<XYZ> oldXYZ = ConduitconnectedLine.Select(x => x.Value).ToList().FirstOrDefault();
+            //Line connectedLine = Line.CreateBound(oldXYZ[0], oldXYZ[1]);
+            Line connectedLine = Line.CreateBound(midXYZs[0], midXYZs[1]);
+            XYZ direction = connectedLine.Direction;
+            //XYZ newXYZ1 = oldXYZ[0] - direction * (outsideDiameter1 / 2);
+            XYZ newXYZ1 = midXYZs[0] - direction * (outsideDiameter1 / 2);
+            //XYZ newXYZ2 = oldXYZ[1] + direction * (outsideDiameter2 / 2);
+            XYZ newXYZ2 = midXYZs[1] + direction * (outsideDiameter2 / 2);
+            Line centerLine = Line.CreateBound(newXYZ1, newXYZ2);
+            //doc.Create.NewDetailCurve(doc.ActiveView, Line.CreateBound(newXYZ1, newXYZ2));
+
+            XYZ normal = centerLine.Direction.CrossProduct(XYZ.BasisZ);
+            XYZ origin = centerLine.GetEndPoint(0);
+            Plane plane = Plane.CreateByNormalAndOrigin(normal, origin);
+            SketchPlane sketchPlane = SketchPlane.Create(doc, plane);
+            //ModelLine modelLine = doc.Create.NewModelCurve(Line.CreateBound(newXYZ1, newXYZ2), sketchPlane) as ModelLine;
+
+            Line leftLine = Utility.CrossProductLine(connectedLine, newXYZ1, (outsideDiameter1 / 2));
+            Line rightLine = Utility.CrossProductLine(connectedLine, newXYZ2, (outsideDiameter1 / 2));
+
+            normal = leftLine.Direction.CrossProduct(XYZ.BasisZ); // Assuming Z-axis is perpendicular
+            origin = leftLine.GetEndPoint(0);
+            plane = Plane.CreateByNormalAndOrigin(normal, origin);
+            sketchPlane = SketchPlane.Create(doc, plane);
+            //modelLine = doc.Create.NewModelCurve(leftLine, sketchPlane) as ModelLine;
+            normal = rightLine.Direction.CrossProduct(XYZ.BasisZ); // Assuming Z-axis is perpendicular
+            origin = rightLine.GetEndPoint(0);
+            plane = Plane.CreateByNormalAndOrigin(normal, origin);
+            sketchPlane = SketchPlane.Create(doc, plane);
+            //modelLine = doc.Create.NewModelCurve(rightLine, sketchPlane) as ModelLine;
+
+            //doc.Create.NewDetailCurve(doc.ActiveView, leftLine);
+            //doc.Create.NewDetailCurve(doc.ActiveView, rightLine);
+            List<XYZ> newXYZs = new List<XYZ>() { leftLine.GetEndPoint(0),leftLine.GetEndPoint(1),
+            rightLine.GetEndPoint(0),rightLine.GetEndPoint(1)};
+            Line upperLine = Line.CreateBound(leftLine.GetEndPoint(0), rightLine.GetEndPoint(0));
+            Line lowerLine = Line.CreateBound(leftLine.GetEndPoint(1), rightLine.GetEndPoint(1));
+            //doc.Create.NewDetailCurve(doc.ActiveView, upperLine);
+            //doc.Create.NewDetailCurve(doc.ActiveView, lowerLine);
+
+            normal = upperLine.Direction.CrossProduct(XYZ.BasisZ); // Assuming Z-axis is perpendicular
+            origin = upperLine.GetEndPoint(0);
+            plane = Plane.CreateByNormalAndOrigin(normal, origin);
+            sketchPlane = SketchPlane.Create(doc, plane);
+            //modelLine = doc.Create.NewModelCurve(upperLine, sketchPlane) as ModelLine;
+            normal = lowerLine.Direction.CrossProduct(XYZ.BasisZ); // Assuming Z-axis is perpendicular
+            origin = lowerLine.GetEndPoint(0);
+            plane = Plane.CreateByNormalAndOrigin(normal, origin);
+            sketchPlane = SketchPlane.Create(doc, plane);
+            //modelLine = doc.Create.NewModelCurve(lowerLine, sketchPlane) as ModelLine;
+
+            BoundingBoxXYZ bbox = new BoundingBoxXYZ
+            {
+                Min = new XYZ(newXYZs.Min(p => p.X), newXYZs.Min(p => p.Y), newXYZs.Min(p => p.Z)),
+                Max = new XYZ(newXYZs.Max(p => p.X), newXYZs.Max(p => p.Y), newXYZs.Max(p => p.Z))
+            };
+
+            /*double minX = newXYZs.Min(p => p.X);
+            double minY = newXYZs.Min(p => p.Y);
+            double minZ = newXYZs.Min(p => p.Z);
+            double maxX = newXYZs.Max(p => p.X);
+            double maxY = newXYZs.Max(p => p.Y);
+            double maxZ = newXYZs.Max(p => p.Z);
+            XYZ minXYZ = new XYZ(minX, minY, minZ);
+            XYZ maxXYZ = new XYZ(maxX, maxY, maxZ);
+            Line diagnolLine = Line.CreateBound(bbox.Min, bbox.Max);*/
+            /*normal = diagnolLine.Direction.CrossProduct(XYZ.BasisZ); // Assuming Z-axis is perpendicular
+             origin = diagnolLine.GetEndPoint(0);
+             plane = Plane.CreateByNormalAndOrigin(normal, origin);
+             sketchPlane = SketchPlane.Create(doc, plane);
+             modelLine = doc.Create.NewModelCurve(diagnolLine, sketchPlane) as ModelLine;
+             doc.Create.NewDetailCurve(doc.ActiveView, diagnolLine);*/
+
+            orderedPoints = CollectBetweenElementByNewBoundingBoxKick(bbox.Min, bbox.Max, twoConduits, multilayerdPS, doc);
+            return orderedPoints;
+        }
+        private static List<XYZ> CollectBetweenElementByNewBoundingBoxKick(XYZ minXYZ, XYZ maxXYZ, List<Element> matchingElements, Dictionary<XYZ,
+           Element> multilayerdPS, Document doc)
+        {
+            BoundingBoxXYZ combinedBoundingBox = new BoundingBoxXYZ
+            {
+                Min = minXYZ,
+                Max = maxXYZ
+            };
+            BoundingBoxIntersectsFilter boundingBoxFilter = new BoundingBoxIntersectsFilter(new Outline(combinedBoundingBox.Min, combinedBoundingBox.Max));
+            List<Element> collector = multilayerdPS.Select(x => x.Value).ToList();
+            List<Element> conduitsBetween = new List<Element>();
+            conduitsBetween.Add(matchingElements[0]);
+            List<Element> IntersectingElements = new FilteredElementCollector(doc, doc.ActiveView.Id).WhereElementIsNotElementType().WherePasses(boundingBoxFilter).ToList();
+            foreach (Element conduit in collector)
+            {
+                if (conduit.Id != matchingElements[0].Id && conduit.Id != matchingElements[1].Id) // Exclude the original two conduits
+                {
+                    if (boundingBoxFilter.PassesFilter(conduit))
+                    {
+                        conduitsBetween.Add(conduit);
+                    }
+                    else if (IntersectingElements.Any(x => x.Id.IntegerValue == conduit.Id.IntegerValue))
+                    {
+                        conduitsBetween.Add(conduit);
+                    }
+                }
+            }
+            conduitsBetween.Add(matchingElements[1]);
+            List<XYZ> collectingOrigin = multilayerdPS
+                                            .Where(kvp => conduitsBetween.Contains(kvp.Value))
+                                            .Select(kvp => kvp.Key)
+                                            .ToList();
+            //XYZ referencePoint = collectingOrigin[0];
+            //List<XYZ> orderedPoints = collectingOrigin.OrderBy(p => p.DistanceTo(referencePoint)).ToList();
+            return collectingOrigin;
+        }
+        private static double DistanceToLine(XYZ p1, XYZ p2, XYZ p)
+        {
+            // Calculate the distance from point p to the line defined by points p1 and p2
+            XYZ lineDirection = p2 - p1;
+            XYZ lineToPoint = p - p1;
+            XYZ projection = lineDirection.CrossProduct(lineToPoint.CrossProduct(lineDirection)).Normalize();
+            return projection.DotProduct(lineToPoint);
+        }
+        public static XYZ FindMinimumDistance(XYZ referencePoint, XYZ[] points)
+        {
+            if (points == null || points.Length == 0)
+                throw new ArgumentException("The points array must contain at least one point.");
+            XYZ minPoint = points[0];
+            double minDistance = referencePoint.DistanceTo(minPoint);
+            foreach (var point in points)
+            {
+                double distance = referencePoint.DistanceTo(point);
+                if (distance < minDistance)
+                {
+                    minDistance = distance;
+                    minPoint = point;
+                }
+            }
+            return minPoint;
+        }
+        public static XYZ GetIntersection(Line line1, Line line2)
+        {
+            IntersectionResultArray resultArray;
+            SetComparisonResult setComparisonResult = line1.Intersect(line2, out resultArray);
+            if (setComparisonResult != SetComparisonResult.Overlap)
+            {
+                return null;
+            }
+
+            if (resultArray == null || resultArray.Size != 1)
+            {
+                return XYZ.Zero;
+            }
+
+            IntersectionResult intersectionResult = resultArray.get_Item(0);
+            return intersectionResult.XYZPoint;
+        }
+        public static Dictionary<double, List<Element>> GroupByElementsWithElevation(List<Element> ElementCollection, string offsetVariable)
+        {
+            Dictionary<int, List<ConduitGrid>> CongridDictionary = GroupStubElements(ElementCollection);
+            Dictionary<double, List<Element>> groupedPrimaryElements = new Dictionary<double, List<Element>>();
+            foreach (KeyValuePair<int, List<ConduitGrid>> kvp in CongridDictionary)
+            {
+                if (kvp.Value.Any())
+                {
+                    List<Element> groupedConduits = kvp.Value.Select(r => r.Conduit).ToList();
+                    Utility.GroupByElevation(groupedConduits, offsetVariable, ref groupedPrimaryElements);
+                }
+            }
+            return groupedPrimaryElements;
         }
         public void VoffsetExecute(UIApplication uiapp, ref List<Element> PrimaryElements, ref List<Element> SecondaryElements)
         {
@@ -2272,7 +3217,7 @@ namespace AutoUpdaterPro
                         tx.Commit();
                         doc.Regenerate();
                         successful = true;
-                         _ = Utility.UserActivityLog(System.Reflection.Assembly.GetExecutingAssembly(), uiapp, "Auto Updater", startDate, "Completed", "Vertical Offset", "Public", "Connect");
+                        _ = Utility.UserActivityLog(System.Reflection.Assembly.GetExecutingAssembly(), uiapp, "Auto Updater", startDate, "Completed", "Vertical Offset", "Public", "Connect");
 
                     }
                     using (SubTransaction tx = new SubTransaction(doc))
@@ -2286,7 +3231,7 @@ namespace AutoUpdaterPro
                 {
                     string message = string.Format("Make sure conduits are aligned to each other properly, if not please align primary conduit to secondary conduit. Error :{0}", ex.Message);
                     System.Windows.MessageBox.Show("Warning. \n" + message, "Alert", MessageBoxButton.OK, MessageBoxImage.Warning);
-                     _ = Utility.UserActivityLog(System.Reflection.Assembly.GetExecutingAssembly(), uiapp, "Auto Updater", startDate, "Failed", "Vertical Offset", "Public", "Connect");
+                    _ = Utility.UserActivityLog(System.Reflection.Assembly.GetExecutingAssembly(), uiapp, "Auto Updater", startDate, "Failed", "Vertical Offset", "Public", "Connect");
                     successful = false;
                 }
             }
@@ -2294,7 +3239,7 @@ namespace AutoUpdaterPro
             {
                 System.Windows.MessageBox.Show("Warning. \n" + exception.Message, "Alert", MessageBoxButton.OK, MessageBoxImage.Warning);
                 successful = false;
-                 _ = Utility.UserActivityLog(System.Reflection.Assembly.GetExecutingAssembly(), uiapp, "Auto Updater", startDate, "Failed", "Vertical Offset", "Public", "Connect");
+                _ = Utility.UserActivityLog(System.Reflection.Assembly.GetExecutingAssembly(), uiapp, "Auto Updater", startDate, "Failed", "Vertical Offset", "Public", "Connect");
             }
         }
         #endregion
@@ -2685,33 +3630,39 @@ namespace AutoUpdaterPro
 
             Line CondutitLine1 = (arrelements.First().Location as LocationCurve).Curve as Line;
             XYZ vieworgin1 = CondutitLine1.Origin;
-
-            foreach (Conduit c in arrelements)
+            try
             {
-                conduitCollection.Clear();
-                Line CondutitLine = (c.Location as LocationCurve).Curve as Line;
-
-                SketchPlane sp = SketchPlane.Create(doc, Plane.CreateByNormalAndOrigin(CondutitLine1.Direction, vieworgin1));
-                double denominator = CondutitLine.Direction.Normalize().DotProduct(sp.GetPlane().Normal);
-                double numerator = (sp.GetPlane().Origin - CondutitLine.GetEndPoint(0)).DotProduct(sp.GetPlane().Normal);
-                double parameter = numerator / denominator;
-                XYZ intersectionPoint = CondutitLine.GetEndPoint(0) + parameter * CondutitLine.Direction;
-                double xdirection = Math.Round(CondutitLine.Direction.X, 6);
-                double ydirection = Math.Round(CondutitLine.Direction.Y, 6);
-                double zdirection = Math.Round(CondutitLine.Direction.Z, 6);
-
-                if (ydirection == -1 || ydirection == 1)
+                foreach (Conduit c in arrelements)
                 {
-                    dictcond.Add(intersectionPoint.X, c);
-                }
-                else
-                {
-                    dictcond.Add(intersectionPoint.Y, c);
-                }
+                    conduitCollection.Clear();
+                    Line CondutitLine = (c.Location as LocationCurve).Curve as Line;
+
+                    SketchPlane sp = SketchPlane.Create(doc, Plane.CreateByNormalAndOrigin(CondutitLine1.Direction, vieworgin1));
+                    double denominator = CondutitLine.Direction.Normalize().DotProduct(sp.GetPlane().Normal);
+                    double numerator = (sp.GetPlane().Origin - CondutitLine.GetEndPoint(0)).DotProduct(sp.GetPlane().Normal);
+                    double parameter = numerator / denominator;
+                    XYZ intersectionPoint = CondutitLine.GetEndPoint(0) + parameter * CondutitLine.Direction;
+                    double xdirection = Math.Round(CondutitLine.Direction.X, 6);
+                    double ydirection = Math.Round(CondutitLine.Direction.Y, 6);
+                    double zdirection = Math.Round(CondutitLine.Direction.Z, 6);
+
+                    if (ydirection == -1 || ydirection == 1)
+                    {
+                        dictcond.Add(intersectionPoint.X, c);
+                    }
+                    else
+                    {
+                        dictcond.Add(intersectionPoint.Y, c);
+                    }
 
 
+                }
+                conduitCollection = dictcond.OrderBy(x => x.Key).Select(x => x.Value as Element).ToList();
             }
-            conduitCollection = dictcond.OrderBy(x => x.Key).Select(x => x.Value as Element).ToList();
+            catch
+            {
+                conduitCollection = arrelements;
+            }
 
             return conduitCollection;
         }
