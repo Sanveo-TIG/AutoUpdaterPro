@@ -2329,10 +2329,16 @@ namespace AutoUpdaterPro
                                     }
                                     else
                                     {
+                                        bool isVerticalConduits = false;
                                         Line priFirst = ((primaryFirst.Location as LocationCurve).Curve as Line);
                                         Line priLast = ((primaryLast.Location as LocationCurve).Curve as Line);
                                         Line secFirst = ((secondaryFirst.Location as LocationCurve).Curve as Line);
                                         Line secLast = ((secondaryLast.Location as LocationCurve).Curve as Line);
+                                        XYZ directionOne = priFirst.Direction;
+                                        XYZ directionTwo = secFirst.Direction;
+                                        isVerticalConduits = new XYZ(0, 0, Math.Abs(directionOne.Z)).IsAlmostEqualTo(XYZ.BasisZ)
+                                            && new XYZ(0, 0, Math.Abs(directionTwo.Z)).IsAlmostEqualTo(XYZ.BasisZ);
+
                                         ConnectorSet firstConnectors = null;
                                         ConnectorSet secondConnectors = null;
                                         firstConnectors = Utility.GetConnectors(primaryFirst);
@@ -2346,10 +2352,11 @@ namespace AutoUpdaterPro
                                         double priSlope = -Math.Round(priFirst.Direction.X, 6) / Math.Round(priFirst.Direction.Y, 6);
                                         double SecSlope = -Math.Round(secFirst.Direction.X, 6) / Math.Round(secFirst.Direction.Y, 6);
 
-                                        if ((priSlope == -1 && SecSlope == 0) || Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4) == -1 || Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4).ToString() == double.NaN.ToString())
+                                        if ((priSlope == -1 && SecSlope == 0) ||
+                                            Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4) == -1 ||
+                                            Math.Round((Math.Round(priSlope, 5)) * (Math.Round(SecSlope, 5)), 4).ToString() == double.NaN.ToString() && !isVerticalConduits)
                                         {
                                             //kick
-
                                             KickExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, i);
                                         }
                                         else if (isSamDirecheckline)
@@ -2359,69 +2366,9 @@ namespace AutoUpdaterPro
                                         }
                                         else
                                         {
-                                            //Roffset
-                                            try
-                                            {
-                                                using (SubTransaction trx = new SubTransaction(doc))
-                                                {
-                                                    trx.Start();
-                                                    List<ElementId> unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Left-Down");
-                                                    if (unwantedids.Count > 0)
-                                                    {
-                                                        foreach (ElementId id in unwantedids)
-                                                        {
-                                                            doc.Delete(id);
-                                                        }
-                                                        unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Right-Down");
 
-                                                        if (unwantedids.Count > 0)
-                                                        {
-                                                            foreach (ElementId id in unwantedids)
-                                                            {
-                                                                doc.Delete(id);
-                                                            }
-                                                            unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Left-Up");
-
-                                                            if (unwantedids.Count > 0)
-                                                            {
-                                                                foreach (ElementId id in unwantedids)
-                                                                {
-                                                                    doc.Delete(id);
-                                                                }
-                                                                unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Bottom-Left");
-
-                                                                if (unwantedids.Count > 0)
-                                                                {
-                                                                    foreach (ElementId id in unwantedids)
-                                                                    {
-                                                                        doc.Delete(id);
-                                                                    }
-                                                                    unwantedids = RoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements, "Top-Right");
-
-                                                                    foreach (ElementId id in unwantedids)
-                                                                    {
-                                                                        doc.Delete(id);
-                                                                    }
-                                                                }
-
-                                                            }
-                                                        }
-                                                    }
-                                                    trx.Commit();
-                                                    unusedfittings = unusedfittings.Where(x => (x as FamilyInstance).MEPModel.ConnectorManager.UnusedConnectors.Size == 2).ToList();
-                                                    doc.Delete(unusedfittings.Select(r => r.Id).ToList());
-                                                }
-                                                using (SubTransaction txs = new SubTransaction(doc))
-                                                {
-                                                    txs.Start();
-                                                    Utility.ApplySync(primarySortedElements, _uiapp);
-                                                    txs.Commit();
-                                                }
-                                            }
-                                            catch
-                                            {
-
-                                            }
+                                            //Hoffset //else if
+                                            HoffsetExecute(_uiapp, ref primarySortedElements, ref secondarySortedElements);
                                         }
                                     }
                                 }
@@ -2453,8 +2400,65 @@ namespace AutoUpdaterPro
             }
         }
 
+        public static Line GetParallelLine(Element firstElement, Element secondElement, ref bool isVerticalConduits, Document doc)
+        {
+            Line line = (firstElement.Location as LocationCurve).Curve as Line;
+            Line line2 = (secondElement.Location as LocationCurve).Curve as Line;
+            ConnectorSet connectors = Utility.GetConnectors(firstElement);
+            ConnectorSet connectors2 = Utility.GetConnectors(secondElement);
+            Utility.GetClosestConnectors(connectors, connectors2, out var ConnectorOne, out var ConnectorTwo);
+            List<XYZ> list = new List<XYZ>();
+            foreach (Connector item in connectors)
+            {
+                list.Add(item.Origin);
+            }
 
+            if (Utility.IsXYTrue(list.FirstOrDefault(), list.LastOrDefault()))
+            {
+                isVerticalConduits = true;
+            }
 
+            if (!isVerticalConduits)
+            {
+                XYZ direction = line2.Direction;
+                XYZ xYZ = direction.CrossProduct(XYZ.BasisZ);
+                Line line3 = Line.CreateBound(ConnectorTwo.Origin, ConnectorTwo.Origin + xYZ.Multiply(ConnectorOne.Origin.DistanceTo(ConnectorTwo.Origin)));
+                XYZ xYZ2 = Utility.FindIntersectionPoint(line.GetEndPoint(0), line.GetEndPoint(1), line3.GetEndPoint(0), line3.GetEndPoint(1));
+                XYZ endpoint = new XYZ(xYZ2.X, xYZ2.Y, ConnectorOne.Origin.Z);
+                return Line.CreateBound(ConnectorOne.Origin, endpoint);
+            }
+            Line line4 = Line.CreateBound(ConnectorTwo.Origin, new XYZ(ConnectorOne.Origin.X, ConnectorOne.Origin.Y, ConnectorTwo.Origin.Z));
+            XYZ xYZ3 = FindIntersectionPoint(line.GetEndPoint(0), line.GetEndPoint(1), line4.GetEndPoint(0), line4.GetEndPoint(1));
+            if (xYZ3 == null)
+            {
+                xYZ3 = new XYZ(ConnectorOne.Origin.X, ConnectorOne.Origin.Y, 0);
+            }
+            XYZ endpoint2 = xYZ3 != null ? new XYZ(xYZ3.X, xYZ3.Y, ConnectorTwo.Origin.Z) : new XYZ(0, 0, ConnectorTwo.Origin.Z);
+            return Line.CreateBound(ConnectorOne.Origin, endpoint2);
+        }
+        public static XYZ FindIntersectionPoint(XYZ s1, XYZ e1, XYZ s2, XYZ e2, int roundOff = 0)
+        {
+            if (roundOff > 0)
+            {
+                s1 = XYZroundOf(s1, roundOff);
+                e1 = XYZroundOf(e1, roundOff);
+                s2 = XYZroundOf(s2, roundOff);
+                e2 = XYZroundOf(e2, roundOff);
+            }
+
+            double num = e1.Y - s1.Y;
+            double num2 = s1.X - e1.X;
+            double num3 = num * s1.X + num2 * s1.Y;
+            double num4 = e2.Y - s2.Y;
+            double num5 = s2.X - e2.X;
+            double num6 = num4 * s2.X + num5 * s2.Y;
+            double num7 = num * num5 - num4 * num2;
+            return (num7 == 0.0) ? null : new XYZ((num5 * num3 - num2 * num6) / num7, (num * num6 - num4 * num3) / num7, 0.0);
+        }
+        public static XYZ XYZroundOf(XYZ xyz, int digit)
+        {
+            return new XYZ(Math.Round(xyz.X, digit), Math.Round(xyz.Y, digit), Math.Round(xyz.Z, digit));
+        }
         #region connectors
         public void HoffsetExecute(UIApplication uiapp, ref List<Element> PrimaryElements, ref List<Element> SecondaryElements)
         {
@@ -2481,7 +2485,7 @@ namespace AutoUpdaterPro
                         Element secondElement = SecondaryElements[i];
                         Line firstLine = (firstElement.Location as LocationCurve).Curve as Line;
                         Line secondLine = (secondElement.Location as LocationCurve).Curve as Line;
-                        Line newLine = Utility.GetParallelLine(firstElement, secondElement, ref isVerticalConduits);
+                        Line newLine = GetParallelLine(firstElement, secondElement, ref isVerticalConduits,doc);
                         double elevation = firstElement.LookupParameter(offsetVariable).AsDouble();
                         XYZ newlineSeconpoint = newLine.GetEndPoint(0) + newLine.Direction.Multiply(20);
                         Conduit thirdConduit = Utility.CreateConduit(doc, firstElement as Conduit, newLine.GetEndPoint(0), newLine.GetEndPoint(1));
@@ -2573,7 +2577,7 @@ namespace AutoUpdaterPro
                             Element secondElement = SecondaryElements[i];
                             Line firstLine = (firstElement.Location as LocationCurve).Curve as Line;
                             Line secondLine = (secondElement.Location as LocationCurve).Curve as Line;
-                            Line newLine = Utility.GetParallelLine(firstElement, secondElement, ref isVerticalConduits);
+                            Line newLine = GetParallelLine(firstElement, secondElement, ref isVerticalConduits, doc);
                             double elevation = firstElement.LookupParameter(offsetVariable).AsDouble();
                             Conduit thirdConduit = Utility.CreateConduit(doc, firstElement as Conduit, newLine.GetEndPoint(0), newLine.GetEndPoint(1));
                             Element thirdElement = doc.GetElement(thirdConduit.Id);
@@ -2634,7 +2638,7 @@ namespace AutoUpdaterPro
                                 Element secondElement = SecondaryElements[i];
                                 Line firstLine = (firstElement.Location as LocationCurve).Curve as Line;
                                 Line secondLine = (secondElement.Location as LocationCurve).Curve as Line;
-                                Line newLine = Utility.GetParallelLine(firstElement, secondElement, ref isVerticalConduits);
+                                Line newLine = GetParallelLine(firstElement, secondElement, ref isVerticalConduits, doc);
                                 double elevation = firstElement.LookupParameter(offsetVariable).AsDouble();
                                 Conduit thirdConduit = Utility.CreateConduit(doc, firstElement as Conduit, newLine.GetEndPoint(0), newLine.GetEndPoint(1));
                                 Element thirdElement = doc.GetElement(thirdConduit.Id);
@@ -2687,8 +2691,6 @@ namespace AutoUpdaterPro
                     }
                 }
             }
-
-
         }
         private static bool HasDuplicateYCoordinates(List<XYZ> points)
         {
