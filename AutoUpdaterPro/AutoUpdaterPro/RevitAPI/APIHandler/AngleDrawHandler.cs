@@ -1719,107 +1719,107 @@ namespace AutoUpdaterPro
 
                                                     if (multiorderthePrimaryElements.Count > 1 && multiordertheSecondaryElements.Count > 1)
                                                     {
-                                                        using (Transaction trans = new Transaction(doc))
-                                                        {
-                                                            trans.Start("CornerGroup");
+                                                        //using (Transaction trans = new Transaction(doc))
+                                                        //{
+                                                        //    trans.Start("CornerGroup");
 
-                                                            List<XYZ> xyzPS = multiorderthePrimaryElements.Select(x => x.Key).ToList();
-                                                            List<XYZ> roundOFF = new List<XYZ>();
-                                                            foreach (var xyz in xyzPS)
-                                                            {
-                                                                XYZ roundedXYZ = new XYZ(Math.Round(xyz.X, 5), Math.Round(xyz.Y, 5), Math.Round(xyz.Z, 5));
-                                                                roundOFF.Add(roundedXYZ);
-                                                            }
-                                                            bool hasDuplicateY = HasDuplicateYCoordinates(roundOFF);
-                                                            int s = 0;
-                                                            int verticalLayerCount = 0;
-                                                            _previousXYZ = null;
-                                                            int d = 0;
-                                                            Dictionary<int, List<Element>> reversePriElements = new Dictionary<int, List<Element>>();
-                                                            List<Element> previousListofElement = new List<Element>();
-                                                            do
-                                                            {
-                                                                List<XYZ> xyzListPrimary = new List<XYZ>();
-                                                                List<XYZ> xyzListSecondary = new List<XYZ>();
-                                                                xyzListPrimary.AddRange(multiorderthePrimaryElements.Select(x => x.Key));
-                                                                List<Element> Pele = FindCornerConduitsInclinedVerticalConduits(multiorderthePrimaryElements, xyzListPrimary, doc, verticalLayerCount, previousListofElement);
-                                                                previousListofElement = (Pele);
-                                                                reversePriElements.Add(d, Pele);
-                                                                d++;
-                                                                GroupedPrimaryElement.AddRange(Pele);
-                                                                if (s == 0)
-                                                                {
-                                                                    verticalLayerCount = GroupedPrimaryElement.Count;
-                                                                }
-                                                                s++;
-                                                                multiorderthePrimaryElements = multiorderthePrimaryElements.Where(kvp => !GroupedPrimaryElement.Any(e => e.Id == kvp.Value.Id))
-                                                                                                   .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                                                                multiorderthePrimaryElements = multiorderthePrimaryElements.OrderBy(kvp => kvp.Key, new XYZComparer()).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                                                                if (multiorderthePrimaryElements.Count == 1)
-                                                                {
-                                                                    GroupedPrimaryElement.Add(multiorderthePrimaryElements.FirstOrDefault().Value);
-                                                                    reversePriElements.Add(d, multiorderthePrimaryElements.Values.ToList());
-                                                                    multiorderthePrimaryElements.Clear();
-                                                                }
-                                                            }
-                                                            while (multiorderthePrimaryElements.Count > 0);
-                                                            _previousXYZ = null;
-                                                            previousListofElement = new List<Element>();
-                                                            int c = 0;
-                                                            Dictionary<int, List<Element>> reverseSecElements = new Dictionary<int, List<Element>>();
-                                                            do
-                                                            {
-                                                                List<XYZ> xyzListPrimary = new List<XYZ>();
-                                                                List<XYZ> xyzListSecondary = new List<XYZ>();
-                                                                xyzListSecondary.AddRange(multiordertheSecondaryElements.Select(x => x.Key));
-                                                                List<Element> Sele = FindCornerConduitsInclinedVerticalConduits(multiordertheSecondaryElements, xyzListSecondary, doc, verticalLayerCount, previousListofElement);
-                                                                reverseSecElements.Add(c, Sele);
-                                                                c++;
-                                                                previousListofElement = (Sele);
-                                                                GroupedSecondaryElement.AddRange(Sele);
-                                                                multiordertheSecondaryElements = multiordertheSecondaryElements.Where(kvp => !GroupedSecondaryElement.Any(e => e.Id == kvp.Value.Id))
-                                                                                               .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                                                                multiordertheSecondaryElements = multiordertheSecondaryElements.OrderBy(kvp => kvp.Key, new XYZComparer()).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-                                                                if (multiordertheSecondaryElements.Count == 1)
-                                                                {
-                                                                    GroupedSecondaryElement.Add(multiordertheSecondaryElements.FirstOrDefault().Value);
-                                                                    reverseSecElements.Add(c, multiordertheSecondaryElements.Values.ToList());
-                                                                    multiordertheSecondaryElements.Clear();
-                                                                }
-                                                            }
-                                                            while (multiordertheSecondaryElements.Count > 0);
-                                                            if (reverseSecElements.Count == 2 && reversePriElements.Count == 2)
-                                                            {
-                                                                bool isReverse = false;
-                                                                List<Line> previousLines = new List<Line>();
-                                                                for (int b = 0; b < reverseSecElements.Values.Count; b++)
-                                                                {
-                                                                    Element priEle = reversePriElements[b].Cast<Element>().ToList().FirstOrDefault();
-                                                                    Element secEle = reverseSecElements[b].Cast<Element>().ToList().FirstOrDefault();
-                                                                    XYZ priOriginXYZ = Utility.GetXYvalue(Utility.GetLineFromConduit(priEle).Origin);
-                                                                    XYZ secOriginXYZ = Utility.GetXYvalue(Utility.GetLineFromConduit(secEle).Origin);
-                                                                    Line prisecLine = Line.CreateBound(priOriginXYZ, secOriginXYZ);
-                                                                    foreach (Line pl in previousLines)
-                                                                    {
-                                                                        if (Utility.GetIntersection(pl, prisecLine) != null)
-                                                                        {
-                                                                            GroupedSecondaryElement = new List<Element>();
-                                                                            reverseSecElements = reverseSecElements.OrderByDescending(kvp => kvp.Key).ToDictionary(x => x.Key, x => x.Value);
-                                                                            foreach (KeyValuePair<int, List<Element>> kvp in reverseSecElements)
-                                                                            {
-                                                                                GroupedSecondaryElement.AddRange(kvp.Value);
-                                                                            }
-                                                                            isReverse = true;
-                                                                            break;
-                                                                        }
-                                                                    }
-                                                                    if (isReverse)
-                                                                        break;
-                                                                    previousLines.Add(prisecLine);
-                                                                }
-                                                            }
-                                                            trans.Commit();
+                                                        List<XYZ> xyzPS = multiorderthePrimaryElements.Select(x => x.Key).ToList();
+                                                        List<XYZ> roundOFF = new List<XYZ>();
+                                                        foreach (var xyz in xyzPS)
+                                                        {
+                                                            XYZ roundedXYZ = new XYZ(Math.Round(xyz.X, 5), Math.Round(xyz.Y, 5), Math.Round(xyz.Z, 5));
+                                                            roundOFF.Add(roundedXYZ);
                                                         }
+                                                        bool hasDuplicateY = HasDuplicateYCoordinates(roundOFF);
+                                                        int s = 0;
+                                                        int verticalLayerCount = 0;
+                                                        _previousXYZ = null;
+                                                        int d = 0;
+                                                        Dictionary<int, List<Element>> reversePriElements = new Dictionary<int, List<Element>>();
+                                                        List<Element> previousListofElement = new List<Element>();
+                                                        do
+                                                        {
+                                                            List<XYZ> xyzListPrimary = new List<XYZ>();
+                                                            List<XYZ> xyzListSecondary = new List<XYZ>();
+                                                            xyzListPrimary.AddRange(multiorderthePrimaryElements.Select(x => x.Key));
+                                                            List<Element> Pele = FindCornerConduitsInclinedVerticalConduits(multiorderthePrimaryElements, xyzListPrimary, doc, verticalLayerCount, previousListofElement);
+                                                            previousListofElement = (Pele);
+                                                            reversePriElements.Add(d, Pele);
+                                                            d++;
+                                                            GroupedPrimaryElement.AddRange(Pele);
+                                                            if (s == 0)
+                                                            {
+                                                                verticalLayerCount = GroupedPrimaryElement.Count;
+                                                            }
+                                                            s++;
+                                                            multiorderthePrimaryElements = multiorderthePrimaryElements.Where(kvp => !GroupedPrimaryElement.Any(e => e.Id == kvp.Value.Id))
+                                                                                               .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                                            multiorderthePrimaryElements = multiorderthePrimaryElements.OrderBy(kvp => kvp.Key, new XYZComparer()).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                                            if (multiorderthePrimaryElements.Count == 1)
+                                                            {
+                                                                GroupedPrimaryElement.Add(multiorderthePrimaryElements.FirstOrDefault().Value);
+                                                                reversePriElements.Add(d, multiorderthePrimaryElements.Values.ToList());
+                                                                multiorderthePrimaryElements.Clear();
+                                                            }
+                                                        }
+                                                        while (multiorderthePrimaryElements.Count > 0);
+                                                        _previousXYZ = null;
+                                                        previousListofElement = new List<Element>();
+                                                        int c = 0;
+                                                        Dictionary<int, List<Element>> reverseSecElements = new Dictionary<int, List<Element>>();
+                                                        do
+                                                        {
+                                                            List<XYZ> xyzListPrimary = new List<XYZ>();
+                                                            List<XYZ> xyzListSecondary = new List<XYZ>();
+                                                            xyzListSecondary.AddRange(multiordertheSecondaryElements.Select(x => x.Key));
+                                                            List<Element> Sele = FindCornerConduitsInclinedVerticalConduits(multiordertheSecondaryElements, xyzListSecondary, doc, verticalLayerCount, previousListofElement);
+                                                            reverseSecElements.Add(c, Sele);
+                                                            c++;
+                                                            previousListofElement = (Sele);
+                                                            GroupedSecondaryElement.AddRange(Sele);
+                                                            multiordertheSecondaryElements = multiordertheSecondaryElements.Where(kvp => !GroupedSecondaryElement.Any(e => e.Id == kvp.Value.Id))
+                                                                                           .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                                            multiordertheSecondaryElements = multiordertheSecondaryElements.OrderBy(kvp => kvp.Key, new XYZComparer()).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+                                                            if (multiordertheSecondaryElements.Count == 1)
+                                                            {
+                                                                GroupedSecondaryElement.Add(multiordertheSecondaryElements.FirstOrDefault().Value);
+                                                                reverseSecElements.Add(c, multiordertheSecondaryElements.Values.ToList());
+                                                                multiordertheSecondaryElements.Clear();
+                                                            }
+                                                        }
+                                                        while (multiordertheSecondaryElements.Count > 0);
+                                                        if (reverseSecElements.Count == 2 && reversePriElements.Count == 2)
+                                                        {
+                                                            bool isReverse = false;
+                                                            List<Line> previousLines = new List<Line>();
+                                                            for (int b = 0; b < reverseSecElements.Values.Count; b++)
+                                                            {
+                                                                Element priEle = reversePriElements[b].Cast<Element>().ToList().FirstOrDefault();
+                                                                Element secEle = reverseSecElements[b].Cast<Element>().ToList().FirstOrDefault();
+                                                                XYZ priOriginXYZ = Utility.GetXYvalue(Utility.GetLineFromConduit(priEle).Origin);
+                                                                XYZ secOriginXYZ = Utility.GetXYvalue(Utility.GetLineFromConduit(secEle).Origin);
+                                                                Line prisecLine = Line.CreateBound(priOriginXYZ, secOriginXYZ);
+                                                                foreach (Line pl in previousLines)
+                                                                {
+                                                                    if (Utility.GetIntersection(pl, prisecLine) != null)
+                                                                    {
+                                                                        GroupedSecondaryElement = new List<Element>();
+                                                                        reverseSecElements = reverseSecElements.OrderByDescending(kvp => kvp.Key).ToDictionary(x => x.Key, x => x.Value);
+                                                                        foreach (KeyValuePair<int, List<Element>> kvp in reverseSecElements)
+                                                                        {
+                                                                            GroupedSecondaryElement.AddRange(kvp.Value);
+                                                                        }
+                                                                        isReverse = true;
+                                                                        break;
+                                                                    }
+                                                                }
+                                                                if (isReverse)
+                                                                    break;
+                                                                previousLines.Add(prisecLine);
+                                                            }
+                                                        }
+                                                        //    trans.Commit();
+                                                        //}
                                                         HoffsetExecute(_uiapp, ref GroupedPrimaryElement, ref GroupedSecondaryElement);
                                                         isOffsetTool = true;
                                                         isoffsetwindowClose = true;
