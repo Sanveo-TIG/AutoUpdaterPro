@@ -19,6 +19,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Xml;
 using TIGUtility;
+using static System.Windows.Forms.VisualStyles.VisualStyleElement;
 using Application = Autodesk.Revit.ApplicationServices.Application;
 using Line = Autodesk.Revit.DB.Line;
 
@@ -2125,6 +2126,11 @@ namespace AutoUpdaterPro
                                                 isoffsetwindowClose = true;
                                             }
                                         }
+                                        else
+                                        {
+                                            System.Windows.MessageBox.Show("Conduits have different reference level", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);                               
+                                           
+                                        }
                                     }
                                     else
                                     {
@@ -2300,8 +2306,6 @@ namespace AutoUpdaterPro
 
                                                     }
                                                 }
-
-
                                             }
                                             else
                                             {
