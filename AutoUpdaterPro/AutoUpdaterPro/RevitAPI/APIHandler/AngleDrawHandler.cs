@@ -1971,6 +1971,13 @@ namespace AutoUpdaterPro
                                     }
                                 }
                             }
+                            else if (!groupPrimary.All(X => X.Value.TrueForAll(Y => Y.LookupParameter("Reference Level").AsElementId() == groupPrimary.FirstOrDefault().Value.FirstOrDefault().LookupParameter("Reference Level").AsElementId()))
+                                                                                        || !groupSecondary.All(X => X.Value.TrueForAll(Y => Y.LookupParameter("Reference Level").AsElementId() == groupSecondary.FirstOrDefault().Value.FirstOrDefault().LookupParameter("Reference Level").AsElementId())))
+                            {
+                                System.Windows.MessageBox.Show("Conduits have different reference level", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                SelectedElements.Clear();
+                                uidoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
+                            }
                             else
                             {
                                 if (CongridDictionary1.First().Value.Count == CongridDictionary1.Last().Value.Count)
@@ -2125,13 +2132,7 @@ namespace AutoUpdaterPro
                                                 isOffsetTool = true;
                                                 isoffsetwindowClose = true;
                                             }
-                                        }
-                                        else if (!groupPrimary.All(X => X.Value.TrueForAll(Y => Y.LookupParameter("Reference Level").AsElementId() == X.Value.FirstOrDefault().LookupParameter("Reference Level").AsElementId()))
-                                                                    && !groupSecondary.All(X => X.Value.TrueForAll(Y => Y.LookupParameter("Reference Level").AsElementId() == X.Value.FirstOrDefault().LookupParameter("Reference Level").AsElementId())))
-                                        {
-                                            System.Windows.MessageBox.Show("Conduits have different reference level", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);                               
-                                           
-                                        }
+                                        }                                        
                                     }
                                     else
                                     {
