@@ -441,7 +441,7 @@ namespace Revit.SDK.Samples.AutoUpdaterPro.CS
                                                         if (!ErrorOccured)
                                                         {
                                                             uiDoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
-                                                            System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AUTOUPDATE", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                                            //System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AUTOUPDATE", MessageBoxButton.OK, MessageBoxImage.Warning);
                                                         }
                                                     }
                                                 }

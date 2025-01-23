@@ -789,7 +789,7 @@ namespace AutoUpdaterPro
                     }
                     if (SelectedElements.Count() == 0)
                     {
-                        System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AutoUpdate", MessageBoxButton.OK, MessageBoxImage.Warning);
+                       // System.Windows.MessageBox.Show("Please select the conduits and ensure they have fittings on both sides.", "Warning-AutoUpdate", MessageBoxButton.OK, MessageBoxImage.Warning);
                         uidoc.Selection.SetElementIds(new List<ElementId> { ElementId.InvalidElementId });
                     }
                 }
